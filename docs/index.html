@@ -6,6 +6,8 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Interleaved Clicking Up Metronome</title>
 <style>
+#tbl{touch-action: pan-y;}
+
   :root{--bg:#0f1117; --panel:#151926; --text:#e7ecf3; --muted:#a3adbd; --line:#232a3c; --field:#0e1322; --accent:#7bdcff; --good:#75e39a; --current:#27314f;}
   body.light{--bg:#f6f7fb; --panel:#ffffff; --text:#0f172a; --muted:#475569; --line:#e2e8f0; --field:#ffffff; --accent:#0077ff; --good:#0ea5e9; --current:#e8f1ff;}
   *{box-sizing:border-box}
@@ -1645,6 +1647,51 @@ label:has(#theme) span:first-child{
 
   <!-- BENCHMARK: 0810-78-CONFIRMED-ICU.html (set as confirmed baseline on 2025-08-10) -->
 <!-- BENCHMARK: Locked on 2025-08-11 08:44:43 PT | Themes: Dark, Light, Blue, Yellow, Green, Red -->
+
+<style>
+
+/* === Yellow Theme: sea turtles background (desktop + mobile) === */
+:root[data-theme='yellow'] html,
+:root[data-theme='yellow'] body{
+  background-color: var(--bg);
+  background-image:
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-position:
+    5% 10%,   95% 12%,
+    8% 85%,   90% 92%,
+    50% 8%,   50% 95%,
+    6% 50%,   94% 55%;
+  background-size:
+    160px auto, 130px auto,
+    140px auto, 150px auto,
+    120px auto, 120px auto,
+    110px auto, 110px auto;
+  background-attachment: fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed;
+}
+
+/* On small screens, show only two smaller turtles in opposite corners */
+@media (max-width: 640px){
+  :root[data-theme='yellow'] html,
+  :root[data-theme='yellow'] body{
+    background-image:
+      url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.10'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+      url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.10'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 96% 12%, 4% 94%;
+    background-size: 64px auto, 56px auto;
+    background-attachment: scroll, scroll;
+  }
+}
+
+</style>
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
@@ -1749,6 +1796,10 @@ label:has(#theme) span:first-child{
 </div>
 <script>
 
+
+  // Track the most recent pointer type (mouse/touch/pen) to disambiguate hybrid devices
+  let lastPointerType = 'mouse';
+  window.addEventListener('pointerdown', (e) => { lastPointerType = e.pointerType || 'mouse'; }, {passive:true});
 // --- Mobile: force top-of-page on first open ---
 try{ if ('scrollRestoration' in history) { history.scrollRestoration = 'manual'; } }catch(_){}
 
@@ -2160,27 +2211,36 @@ function renderCycle(){
     tr.dataset.localIndex = i;
     var _segC = compressSegments(r.segments);
     tr.innerHTML = '<td>'+r.step+'</td><td title="'+r.segments+'">'+_segC+'</td><td>'+r.tempo+'</td>';
-    tr.addEventListener('click', ()=>{ setCurrentIndexInCycle(i); if(isStarted) playCurrent(); });
+     tr.addEventListener('click', ()=>{ setCurrentIndexInCycle(i); if(isStarted) playCurrent(); });
     tr.addEventListener('dblclick', ()=>{ setCurrentIndexInCycle(i); if(!isStarted) start(); else playCurrent(); });
     (function(){
-      // Touch: double-tap or long-press to start/jump; single tap = highlight (and jump if running)
-      let lastTap=0, singleTapTimer=null, pressTimer=null;
-      const TAP_GAP=300, LONG_MS=450;
+      // Touch behavior for row: ONLY long-press changes step; taps/scrolls do nothing.
+      // Desktop mouse: normal click/double-click works (handled by existing listeners).
+      let pressTimer=null, startX=0, startY=0, allowClick=false;
+      const LONG_MS=550, MOVE_PX=10;
+      function armAllowClick(){ allowClick = true; setTimeout(()=>allowClick=false, 0); }
       function doStartOrJump(){ setCurrentIndexInCycle(i); if(!isStarted) start(); else playCurrent(); }
-      function doSingleTap(){ setCurrentIndexInCycle(i); if(isStarted) playCurrent(); }
+      // On hybrid devices, only block clicks that came from touch; allow mouse clicks.
+      tr.addEventListener('click', (e)=>{
+        // If the last pointer was touch and we didn't arm via long-press, swallow the click
+        if ((lastPointerType !== 'mouse') && !allowClick) { e.preventDefault(); e.stopPropagation(); }
+      }, true);
       tr.addEventListener('touchstart', (e)=>{
-        if(e.touches && e.touches.length>1) return;
-        pressTimer = setTimeout(()=>{ pressTimer=null; doStartOrJump(); }, LONG_MS);
+        if(e.touches && e.touches.length>1) return; // ignore multi-touch
+        const t = e.touches? e.touches[0] : e;
+        startX = t.clientX; startY = t.clientY;
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(()=>{ pressTimer=null; armAllowClick(); doStartOrJump(); }, LONG_MS);
       }, {passive:true});
-      tr.addEventListener('touchend', ()=>{
-        if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
-        const now=Date.now();
-        if(now-lastTap < TAP_GAP){ if(singleTapTimer){ clearTimeout(singleTapTimer); singleTapTimer=null; } lastTap=0; doStartOrJump(); }
-        else { lastTap=now; if(singleTapTimer){ clearTimeout(singleTapTimer); }
-               singleTapTimer=setTimeout(()=>{ singleTapTimer=null; doSingleTap(); }, TAP_GAP); }
+      tr.addEventListener('touchmove', (e)=>{
+        if(!pressTimer) return;
+        const t = e.touches? e.touches[0] : e;
+        if(Math.abs(t.clientX - startX) > MOVE_PX || Math.abs(t.clientY - startY) > MOVE_PX){
+          clearTimeout(pressTimer); pressTimer=null;
+        }
       }, {passive:true});
-      tr.addEventListener('touchmove', ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }, {passive:true});
-      tr.addEventListener('touchcancel', ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } if(singleTapTimer){ clearTimeout(singleTapTimer); singleTapTimer=null; } }, {passive:true});
+      tr.addEventListener('touchend', ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }, {passive:true});
+      tr.addEventListener('touchcancel', ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }, {passive:true});
     })();
     tb.appendChild(tr);
 });
