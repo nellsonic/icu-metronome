@@ -2,6 +2,16 @@
 
 <html lang="en">
 <head>
+
+<style>
+/* Make touch interactions reliable on mobile/tablets */
+#tbl tbody tr {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* eliminate 300ms delay / double-tap zoom */
+  user-select: none;
+}
+</style>
+
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Interleaved Clicking Up Metronome</title>
@@ -1844,10 +1854,10 @@ function saveSettings(){
     volume:Math.min(100, Math.max(0, +byId('volume').value||50)),
     pulse: !!byId('pulseToggle').checked,
     limitTarget: !!byId('limitTarget').checked,
-    startSeg: ((byId('startSeg') ? byId('startSeg').value : null) ? +byId('startSeg').value : null),
-    backwards: !!(byId('backwards') && byId('backwards').checked),
-    theme: (byId('theme') ? byId('theme').value : ((byId('themeToggle') && byId('themeToggle').checked) ? 'light' : 'dark')),
-    allowFullVolume: !!(byId('allowFullVolume') && byId('allowFullVolume').checked),
+    startSeg: (byId('startSeg')?.value ? +byId('startSeg').value : null),
+    backwards: !!byId('backwards')?.checked,
+    theme: (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark')),
+    allowFullVolume: !!byId('allowFullVolume')?.checked,
     _v: SCHEMA_VERSION
   };
   localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -1862,16 +1872,16 @@ function loadSettings(){
     s = {};
   }
   if(s._v !== SCHEMA_VERSION) s = {};
-  byId('start').value  = ((s.start) != null ? (s.start) : (75));
-  byId('target').value = ((s.target) != null ? (s.target) : (150));
-  byId('step').value   = ((s.step) != null ? (s.step) : (5));
-  byId('cycles').value = ((s.cycles) != null ? (s.cycles) : (7));
-  byId('subdiv').value = ((s.subdiv) != null ? (s.subdiv) : (1));
-  byId('volume').value = (((s.volume) != null ? (s.volume) : (50)));
+  byId('start').value  = s.start  ?? 75;
+  byId('target').value = s.target ?? 150;
+  byId('step').value   = s.step   ?? 5;
+  byId('cycles').value = s.cycles ?? 7;
+  byId('subdiv').value = s.subdiv ?? 1;
+  byId('volume').value = (s.volume ?? 50);
   byId('volVal').textContent = String(Math.round(+byId('volume').value||50));
   byId('pulseToggle').checked = !!s.pulse;
   byId('limitTarget').checked = !!s.limitTarget;
-  if(byId('startSeg')) byId('startSeg').value = (((s.startSeg) != null ? (s.startSeg) : ('')));
+  if(byId('startSeg')) byId('startSeg').value = (s.startSeg ?? '');
   if(byId('theme')){ let t=(s.theme||'dark'); if(t==='color') t='blue'; byId('theme').value=t; }
 if(byId('themeToggle')) byId('themeToggle').checked = (s.theme === 'light');
   if(byId('allowFullVolume')) byId('allowFullVolume').checked = !!s.allowFullVolume;
@@ -1880,7 +1890,7 @@ if(byId('themeToggle')) byId('themeToggle').checked = (s.theme === 'light');
 
 function applyTheme(){
   try{
-    const v = (byId('theme') ? byId('theme').value : ((byId('themeToggle') && byId('themeToggle').checked) ? 'light' : 'dark'));
+    const v = (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark'));
     document.documentElement.setAttribute('data-theme', v);
     document.body.classList.toggle('light', v==='light');
   }catch(_){ document.body.classList.toggle('light', false); }
@@ -1889,7 +1899,7 @@ function applyTheme(){
 // Effective gain: limit to safe level unless full volume is allowed
 function setEffectiveGainFromSlider(){
   const v = (+byId('volume').value||0);
-  const allowFull = !!(byId('allowFullVolume') && byId('allowFullVolume').checked);
+  const allowFull = !!byId('allowFullVolume')?.checked;
   const raw = Math.max(0, Math.min(1, v/100));
   const SAFE_ATTEN = 0.4; // approx inverse of louder sample
   const eff = allowFull ? raw : (raw * SAFE_ATTEN);
@@ -1910,13 +1920,13 @@ byId('nextStepBtn').addEventListener('click', nextStep);
 byId('prevCycle').addEventListener('click', prevCycle);
 
 byId('limitTarget').addEventListener('change', ()=>{ saveSettings(); generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); });
-if(byId('startSeg')) byId('startSeg').addEventListener('change', ()=>{ saveSettings(); generate(); });
-if(byId('backwards')) byId('backwards').addEventListener('change', ()=>{ saveSettings(); generate(); });
+byId('startSeg')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
+byId('backwards')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
 
 byId('themeToggle').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
-if(byId('theme')) byId('theme').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
+byId('theme')?.addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
 
-if(byId('allowFullVolume')) byId('allowFullVolume').addEventListener('change', ()=>{ saveSettings(); setEffectiveGainFromSlider(); });
+byId('allowFullVolume')?.addEventListener('change', ()=>{ saveSettings(); setEffectiveGainFromSlider(); });
 
 
 // Volume live
@@ -2117,7 +2127,7 @@ function generate(opts={preserveCycle:false}){
     const T = +byId('cycles').value || 1;
     const startDisplay = clamp(+byId('startSeg').value, 1, T);
     // Work in forward coordinates first; if backwards is on, convert start to forward coordinate
-    const backwardsOn = !!(byId('backwards') && byId('backwards').checked);
+    const backwardsOn = !!byId('backwards')?.checked;
     const S_forward = backwardsOn ? (T - startDisplay + 1) : startDisplay;
 
     // Precompute sets and mapping functions per cycle
@@ -2633,7 +2643,7 @@ function restoreResumeOnLoad(){
     if (e.key === 'Escape') closeMenu();
   });
 
-  if(btnCopy) btnCopy.addEventListener('click', async () => {
+  btnCopy?.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText('andersclarinet@gmail.com');
       copied.hidden = false;
@@ -2648,48 +2658,107 @@ function restoreResumeOnLoad(){
 
 
 <script>
+// ===== Universal Touch Overlay (tap = select; long-press = start/jump) =====
 (function(){
-  function unlockAudioOnce(){
-    try{
-      var C = window.AudioContext || window.webkitAudioContext;
-      if (!C) return;
-      var ctx = window.audioCtx || new C();
-      window.audioCtx = ctx;
-      if (!window.masterGain) {
-        try {
-          window.masterGain = ctx.createGain();
-          var volEl = document.getElementById('volume');
-          var vol = 0.5;
-          if (volEl && volEl.value != null) {
-            var v = parseFloat(volEl.value);
-            if (!isNaN(v)) vol = Math.max(0, Math.min(1, v/100));
-          }
-          window.masterGain.gain.value = vol;
-          window.masterGain.connect(ctx.destination);
-        } catch(e){}
+  function byId(id){ return document.getElementById(id); }
+  function getIndexFromRow(tr){
+    // Prefer data-i if present; otherwise compute from DOM order
+    if (tr && tr.dataset && tr.dataset.i) return parseInt(tr.dataset.i, 10) || 0;
+    var rows = tr && tr.parentElement ? tr.parentElement.querySelectorAll('tr') : [];
+    for (var i=0;i<rows.length;i++){ if (rows[i]===tr) return i; }
+    return 0;
+  }
+  function selectIndex(i){
+    // Try common selection hooks used in your app; fallback to DOM highlight
+    if (typeof window.setCurrentIndexInCycle === 'function') {
+      try { window.setCurrentIndexInCycle(i); return true; } catch(e){}
+    }
+    // Fallback visual highlight
+    var rows = document.querySelectorAll('#tbl tbody tr');
+    for (var j=0;j<rows.length;j++){ rows[j].classList.toggle('current', j===i); }
+    return true;
+  }
+  function startOrHandoff(){
+    if (typeof window.start === 'function') {
+      if (typeof window.isStarted === 'boolean' && window.isStarted) {
+        if (typeof window.playCurrent === 'function') { try { window.playCurrent(); } catch(e){} }
+      } else {
+        try { window.start(); } catch(e){}
       }
-      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
-    }catch(e){}
-    window.removeEventListener('pointerdown', unlockAudioOnce, true);
-    window.removeEventListener('touchend',   unlockAudioOnce, true);
-    window.removeEventListener('click',      unlockAudioOnce, true);
+    }
   }
-  window.addEventListener('pointerdown', unlockAudioOnce, true);
-  window.addEventListener('touchend',    unlockAudioOnce, true);
-  window.addEventListener('click',       unlockAudioOnce, true);
-  // Ensure Start triggers unlock too
-  function patchStart(){
-    if (typeof window.start === 'function' && !window.start.__univAudioPatched__) {
-      var _start = window.start;
-      window.start = function(){
-        try{ unlockAudioOnce(); }catch(_){}
-        return _start.apply(this, arguments);
-      };
-      window.start.__univAudioPatched__ = true;
-    } else { setTimeout(patchStart, 100); }
+
+  function install(){
+    var tbody = document.querySelector('#tbl tbody');
+    if (!tbody || tbody.__touchOverlayInstalled__) return;
+    tbody.__touchOverlayInstalled__ = true;
+
+    var pressTimer=null, startX=0, startY=0, moved=false, pressRow=null;
+    var LONG_MS=500, MOVE_PX=10;
+
+    tbody.addEventListener('pointerdown', function(e){
+      if (e.pointerType !== 'touch') return; // only handle touch here; mouse remains native
+      var tr = e.target.closest('tr');
+      if (!tr) return;
+      pressRow = tr; moved=false;
+      startX = e.clientX; startY = e.clientY;
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(function(){
+        pressTimer = null;
+        var idx = getIndexFromRow(pressRow);
+        selectIndex(idx);
+        startOrHandoff(); // long-press => start (or jump if already running)
+      }, LONG_MS);
+    }, {passive:true});
+
+    tbody.addEventListener('pointermove', function(e){
+      if (e.pointerType !== 'touch') return;
+      if (!pressTimer) return;
+      if (Math.abs(e.clientX - startX) > MOVE_PX || Math.abs(e.clientY - startY) > MOVE_PX){
+        clearTimeout(pressTimer); pressTimer=null; moved=true;
+      }
+    }, {passive:true});
+
+    function endLike(){
+      if (pressTimer){
+        clearTimeout(pressTimer); pressTimer=null;
+        if (pressRow){
+          var idx = getIndexFromRow(pressRow);
+          selectIndex(idx);          // tap => select
+          if (typeof window.isStarted === 'boolean' && window.isStarted) {
+            if (typeof window.playCurrent === 'function') { try { window.playCurrent(); } catch(e){} }
+          }
+        }
+      }
+      pressRow=null;
+    }
+    tbody.addEventListener('pointerup', function(e){
+      if (e.pointerType !== 'touch') return;
+      endLike();
+    }, {passive:true});
+    tbody.addEventListener('pointercancel', function(e){
+      if (e.pointerType !== 'touch') return;
+      if (pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
+      pressRow=null;
+    }, {passive:true});
+
+    // Prevent ghost clicks from double-firing after touch
+    tbody.addEventListener('click', function(e){
+      // If the click immediately follows a touch interaction, allow native handlers to run;
+      // We won't stop propagation here to avoid breaking desktop.
+      // No-op on purpose.
+    }, true);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', patchStart);
-  else patchStart();
+
+  // Observe table changes (regeneration) and re-install
+  function observe(){
+    var tbl = document.getElementById('tbl') || document.body;
+    var mo = new MutationObserver(function(){ install(); });
+    mo.observe(tbl, {subtree:true, childList:true});
+    install();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observe);
+  else observe();
 })();
 </script>
 
