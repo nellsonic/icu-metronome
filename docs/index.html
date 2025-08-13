@@ -1844,10 +1844,10 @@ function saveSettings(){
     volume:Math.min(100, Math.max(0, +byId('volume').value||50)),
     pulse: !!byId('pulseToggle').checked,
     limitTarget: !!byId('limitTarget').checked,
-    startSeg: (byId('startSeg')?.value ? +byId('startSeg').value : null),
-    backwards: !!byId('backwards')?.checked,
-    theme: (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark')),
-    allowFullVolume: !!byId('allowFullVolume')?.checked,
+    startSeg: ((byId('startSeg') ? byId('startSeg').value : null) ? +byId('startSeg').value : null),
+    backwards: !!(byId('backwards') && byId('backwards').checked),
+    theme: (byId('theme') ? byId('theme').value : ((byId('themeToggle') && byId('themeToggle').checked) ? 'light' : 'dark')),
+    allowFullVolume: !!(byId('allowFullVolume') && byId('allowFullVolume').checked),
     _v: SCHEMA_VERSION
   };
   localStorage.setItem(STORE_KEY, JSON.stringify(s));
@@ -1862,16 +1862,16 @@ function loadSettings(){
     s = {};
   }
   if(s._v !== SCHEMA_VERSION) s = {};
-  byId('start').value  = s.start  ?? 75;
-  byId('target').value = s.target ?? 150;
-  byId('step').value   = s.step   ?? 5;
-  byId('cycles').value = s.cycles ?? 7;
-  byId('subdiv').value = s.subdiv ?? 1;
-  byId('volume').value = (s.volume ?? 50);
+  byId('start').value  = ((s.start) != null ? (s.start) : (75));
+  byId('target').value = ((s.target) != null ? (s.target) : (150));
+  byId('step').value   = ((s.step) != null ? (s.step) : (5));
+  byId('cycles').value = ((s.cycles) != null ? (s.cycles) : (7));
+  byId('subdiv').value = ((s.subdiv) != null ? (s.subdiv) : (1));
+  byId('volume').value = (((s.volume) != null ? (s.volume) : (50)));
   byId('volVal').textContent = String(Math.round(+byId('volume').value||50));
   byId('pulseToggle').checked = !!s.pulse;
   byId('limitTarget').checked = !!s.limitTarget;
-  if(byId('startSeg')) byId('startSeg').value = (s.startSeg ?? '');
+  if(byId('startSeg')) byId('startSeg').value = (((s.startSeg) != null ? (s.startSeg) : ('')));
   if(byId('theme')){ let t=(s.theme||'dark'); if(t==='color') t='blue'; byId('theme').value=t; }
 if(byId('themeToggle')) byId('themeToggle').checked = (s.theme === 'light');
   if(byId('allowFullVolume')) byId('allowFullVolume').checked = !!s.allowFullVolume;
@@ -1880,7 +1880,7 @@ if(byId('themeToggle')) byId('themeToggle').checked = (s.theme === 'light');
 
 function applyTheme(){
   try{
-    const v = (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark'));
+    const v = (byId('theme') ? byId('theme').value : ((byId('themeToggle') && byId('themeToggle').checked) ? 'light' : 'dark'));
     document.documentElement.setAttribute('data-theme', v);
     document.body.classList.toggle('light', v==='light');
   }catch(_){ document.body.classList.toggle('light', false); }
@@ -1889,7 +1889,7 @@ function applyTheme(){
 // Effective gain: limit to safe level unless full volume is allowed
 function setEffectiveGainFromSlider(){
   const v = (+byId('volume').value||0);
-  const allowFull = !!byId('allowFullVolume')?.checked;
+  const allowFull = !!(byId('allowFullVolume') && byId('allowFullVolume').checked);
   const raw = Math.max(0, Math.min(1, v/100));
   const SAFE_ATTEN = 0.4; // approx inverse of louder sample
   const eff = allowFull ? raw : (raw * SAFE_ATTEN);
@@ -1910,13 +1910,13 @@ byId('nextStepBtn').addEventListener('click', nextStep);
 byId('prevCycle').addEventListener('click', prevCycle);
 
 byId('limitTarget').addEventListener('change', ()=>{ saveSettings(); generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); });
-byId('startSeg')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
-byId('backwards')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
+if(byId('startSeg')) byId('startSeg').addEventListener('change', ()=>{ saveSettings(); generate(); });
+if(byId('backwards')) byId('backwards').addEventListener('change', ()=>{ saveSettings(); generate(); });
 
 byId('themeToggle').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
-byId('theme')?.addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
+if(byId('theme')) byId('theme').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
 
-byId('allowFullVolume')?.addEventListener('change', ()=>{ saveSettings(); setEffectiveGainFromSlider(); });
+if(byId('allowFullVolume')) byId('allowFullVolume').addEventListener('change', ()=>{ saveSettings(); setEffectiveGainFromSlider(); });
 
 
 // Volume live
@@ -2117,7 +2117,7 @@ function generate(opts={preserveCycle:false}){
     const T = +byId('cycles').value || 1;
     const startDisplay = clamp(+byId('startSeg').value, 1, T);
     // Work in forward coordinates first; if backwards is on, convert start to forward coordinate
-    const backwardsOn = !!byId('backwards')?.checked;
+    const backwardsOn = !!(byId('backwards') && byId('backwards').checked);
     const S_forward = backwardsOn ? (T - startDisplay + 1) : startDisplay;
 
     // Precompute sets and mapping functions per cycle
@@ -2633,7 +2633,7 @@ function restoreResumeOnLoad(){
     if (e.key === 'Escape') closeMenu();
   });
 
-  btnCopy?.addEventListener('click', async () => {
+  if(btnCopy) btnCopy.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText('andersclarinet@gmail.com');
       copied.hidden = false;
@@ -2643,6 +2643,53 @@ function restoreResumeOnLoad(){
       window.prompt('Copy email address:', 'andersclarinet@gmail.com');
     }
   });
+})();
+</script>
+
+
+<script>
+(function(){
+  function unlockAudioOnce(){
+    try{
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return;
+      var ctx = window.audioCtx || new C();
+      window.audioCtx = ctx;
+      if (!window.masterGain) {
+        try {
+          window.masterGain = ctx.createGain();
+          var volEl = document.getElementById('volume');
+          var vol = 0.5;
+          if (volEl && volEl.value != null) {
+            var v = parseFloat(volEl.value);
+            if (!isNaN(v)) vol = Math.max(0, Math.min(1, v/100));
+          }
+          window.masterGain.gain.value = vol;
+          window.masterGain.connect(ctx.destination);
+        } catch(e){}
+      }
+      if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
+    }catch(e){}
+    window.removeEventListener('pointerdown', unlockAudioOnce, true);
+    window.removeEventListener('touchend',   unlockAudioOnce, true);
+    window.removeEventListener('click',      unlockAudioOnce, true);
+  }
+  window.addEventListener('pointerdown', unlockAudioOnce, true);
+  window.addEventListener('touchend',    unlockAudioOnce, true);
+  window.addEventListener('click',       unlockAudioOnce, true);
+  // Ensure Start triggers unlock too
+  function patchStart(){
+    if (typeof window.start === 'function' && !window.start.__univAudioPatched__) {
+      var _start = window.start;
+      window.start = function(){
+        try{ unlockAudioOnce(); }catch(_){}
+        return _start.apply(this, arguments);
+      };
+      window.start.__univAudioPatched__ = true;
+    } else { setTimeout(patchStart, 100); }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', patchStart);
+  else patchStart();
 })();
 </script>
 
