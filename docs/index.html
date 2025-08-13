@@ -2648,202 +2648,143 @@ function restoreResumeOnLoad(){
 
 
 <script>
-// ===== Robust Persist v2: multi-backend + URL hash, with touch tap-to-start =====
+// ===== Touch Click-Shiv (desktop unaffected) + gentle persistence =====
 (function(){
-  // --- storage shim ---
-  var KEY = 'icu:lastIndex';
-  function canUse(store){
-    try{
-      var t='__t'+Math.random(); store.setItem(t,'1'); store.removeItem(t); return true;
-    }catch(e){ return false; }
-  }
-  var stor = canUse(window.localStorage) ? window.localStorage
-           : canUse(window.sessionStorage) ? window.sessionStorage
-           : null;
+  var isTouch = (('maxTouchPoints' in navigator && navigator.maxTouchPoints > 0) ||
+                 ('ontouchstart' in window) || /\b(Android|iPhone|iPad|iPod|Mobile|Tablet)\b/i.test(navigator.userAgent||''));
+  if (!isTouch) return;
 
-  function saveIndex(i){
-    try{
-      if (stor) stor.setItem(KEY, String(i));
-      // also put in cookie (best-effort)
-      document.cookie = KEY + '=' + encodeURIComponent(String(i)) + '; path=/; max-age=31536000';
-      // and mirror into URL hash
-      try{
-        var url = new URL(window.location.href);
-        url.hash = 's=' + String(i);
-        history.replaceState(null, '', url.toString());
-      }catch(_){ location.hash = 's='+String(i); }
-    }catch(e){}
-  }
-  function loadCookie(){
-    try{
-      var m = document.cookie.match(new RegExp('(?:^|; )'+KEY.replace(/[-.$?*|{}()[\]\/+^]/g,'\$&')+'=([^;]*)'));
-      return m ? decodeURIComponent(m[1]) : null;
-    }catch(e){ return null; }
-  }
-  function loadFromHash(){
-    try{
-      var h = (location.hash||'').replace(/^#/,'');
-      if (!h) return null;
-      var parts = h.split('&');
-      for (var k=0;k<parts.length;k++){
-        var p = parts[k].split('=');
-        if (p[0]==='s') return p[1];
-      }
-      return null;
-    }catch(e){ return null; }
-  }
-  function loadIndex(){
-    var v = null;
-    try{ v = stor ? stor.getItem(KEY) : null; }catch(e){}
-    if (v==null) v = loadCookie();
-    if (v==null) v = loadFromHash();
-    var n = v==null ? null : parseInt(v,10);
-    return isNaN(n) ? null : n;
-  }
-
-  // --- helpers ---
   function q(sel){ return document.querySelector(sel); }
   function qa(sel){ return document.querySelectorAll(sel); }
-  function getIndexFromRow(tr){
-    if (tr && tr.dataset && tr.dataset.i) {
-      var n = parseInt(tr.dataset.i,10);
-      if (!isNaN(n)) return n;
-    }
-    var rows = tr && tr.parentElement ? tr.parentElement.querySelectorAll('tr') : [];
-    for (var i=0;i<rows.length;i++){ if (rows[i]===tr) return i; }
-    return 0;
-  }
-  function setIndex(i){
-    if (typeof window.setCurrentIndexInCycle === 'function') {
-      try { window.setCurrentIndexInCycle(i); return; } catch(e){}
-    }
-    // Fallback: apply highlight directly
-    var rows = qa('#tbl tbody tr');
-    for (var j=0;j<rows.length;j++){ rows[j].classList.toggle('current', j===i); }
-  }
-  function playFromCurrentIfRunning(){
-    if (typeof window.isStarted === 'boolean' && window.isStarted){
-      if (typeof window.playCurrent === 'function') { try { window.playCurrent(); } catch(e){} }
-    }
-  }
-  function startOrJump(){
-    if (typeof window.isStarted === 'boolean' && window.isStarted){
-      if (typeof window.playCurrent === 'function') { try { window.playCurrent(); } catch(e){} }
-    } else if (typeof window.start === 'function'){
-      try { window.start(); } catch(e){}
-    }
-  }
-  function scrollToIndex(i){
-    var rows = qa('#tbl tbody tr'); var tr = rows[i];
-    if (!tr) return;
-    try{ tr.scrollIntoView({block:'center', inline:'nearest'}); }
-    catch(_){ try{ tr.scrollIntoView(); }catch(__){} }
-  }
+  function byId(id){ return document.getElementById(id); }
 
-  // --- touch: tap = select + start; long-press same ---
-  function installTouch(){
-    var tbody = q('#tbl tbody');
-    if (!tbody || tbody.__touchPersistV2__) return;
-    tbody.__touchPersistV2__ = true;
-    var pressTimer=null, sx=0, sy=0, row=null;
-    var LONG_MS=420, MOVE=10;
-
-    tbody.addEventListener('pointerdown', function(e){
-      if (e.pointerType !== 'touch') return;
-      var tr = e.target.closest('tr'); if (!tr) return;
-      row = tr; sx=e.clientX; sy=e.clientY;
-      clearTimeout(pressTimer);
-      pressTimer = setTimeout(function(){
-        pressTimer=null;
-        var idx=getIndexFromRow(row);
-        setIndex(idx); saveIndex(idx); scrollToIndex(idx); startOrJump();
-      }, LONG_MS);
-    }, {passive:true});
-
-    tbody.addEventListener('pointermove', function(e){
-      if (e.pointerType !== 'touch') return;
-      if (!pressTimer) return;
-      if (Math.abs(e.clientX-sx)>MOVE || Math.abs(e.clientY-sy)>MOVE){ clearTimeout(pressTimer); pressTimer=null; }
-    }, {passive:true});
-
-    tbody.addEventListener('pointerup', function(e){
-      if (e.pointerType !== 'touch') return;
-      if (pressTimer){
-        clearTimeout(pressTimer); pressTimer=null;
-        if (row){
-          var idx=getIndexFromRow(row);
-          setIndex(idx); saveIndex(idx); scrollToIndex(idx); startOrJump();
-        }
-      }
-      row=null;
-    }, {passive:true});
-  }
-
-  // Save when app changes current index (if it exposes a setter)
-  function hookSaves(){
-    if (typeof window.setCurrentIndexInCycle === 'function' && !window.setCurrentIndexInCycle.__persistWrap2__){
-      var _o = window.setCurrentIndexInCycle;
-      window.setCurrentIndexInCycle = function(i){
-        try{ saveIndex(i|0); }catch(_){}
-        return _o.apply(this, arguments);
-      };
-      window.setCurrentIndexInCycle.__persistWrap2__ = true;
-    }
-    // Fallback observer: when .current class moves
-    var tb = q('#tbl tbody');
-    if (tb && !tb.__persistObs2__){
+  // --- gentle persistence (by row's first cell text) ---
+  var KEY='icu:lastRowKey';
+  function saveKeyFromRow(tr){
+    try{
+      var key = tr && tr.cells && tr.cells[0] ? (tr.cells[0].innerText||tr.cells[0].textContent||'').trim() : '';
+      if (!key) return;
+      sessionStorage.setItem(KEY, key); // session-only to avoid privacy blockers
       try{
-        var mo = new MutationObserver(function(muts){
-          for (var k=0;k<muts.length;k++){
-            var m = muts[k];
-            if (m.type==='attributes' && m.attributeName==='class' && m.target.classList && m.target.classList.contains('current')){
-              var rows = qa('#tbl tbody tr');
-              for (var j=0;j<rows.length;j++){ if (rows[j]===m.target){ saveIndex(j); break; } }
-            }
-          }
-        });
-        mo.observe(tb, {attributes:true, subtree:true, attributeFilter:['class']});
-        tb.__persistObs2__ = true;
+        var u = new URL(location.href);
+        u.hash = 'k='+encodeURIComponent(key);
+        history.replaceState(null,'',u.toString());
+      }catch(_){ location.hash='k='+encodeURIComponent(key); }
+    }catch(e){}
+  }
+  function loadKey(){
+    var v=null;
+    try{ v = sessionStorage.getItem(KEY); }catch(e){}
+    if(!v){
+      try{
+        var h=(location.hash||'').replace(/^#/,''); if(h){
+          var m=h.match(/(?:^|&)k=([^&]+)/); if(m){ v = decodeURIComponent(m[1]); }
+        }
       }catch(e){}
     }
+    return v;
   }
-
-  // Restore when rows appear or regenerate
-  function tryRestore(){
-    var idx = loadIndex();
-    if (idx==null) return;
-    var rows = qa('#tbl tbody tr');
-    if (!rows.length || !rows[idx]) return;
-    setIndex(idx);
-    scrollToIndex(idx);
-    // If already running, handoff to that step
-    playFromCurrentIfRunning();
-  }
-
-  function observe(){
-    var root = q('#tbl') || document.body;
-    var mo = new MutationObserver(function(){
-      installTouch();
-      hookSaves();
-      tryRestore();
-    });
-    mo.observe(root, {subtree:true, childList:true});
-    installTouch();
-    hookSaves();
-    tryRestore();
-  }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observe);
-  else observe();
-
-  window.addEventListener('beforeunload', function(){
-    try{
-      if (typeof window.getCurrentIndexInCycle === 'function'){
-        var i = window.getCurrentIndexInCycle();
-        saveIndex(i|0);
+  function restoreByKey(){
+    var want = loadKey(); if(!want) return;
+    var rows = qa('#tbl tbody tr'); if(!rows.length) return;
+    for (var i=0;i<rows.length;i++){
+      var c0 = rows[i].cells && rows[i].cells[0] ? (rows[i].cells[0].innerText||rows[i].cells[0].textContent||'').trim() : '';
+      if (c0 === want){
+        // Dispatch a click so your normal selection logic runs
+        try{
+          var evt = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
+          rows[i].dispatchEvent(evt);
+        }catch(e){
+          rows[i].click && rows[i].click();
+        }
+        // Scroll it into view
+        try{ rows[i].scrollIntoView({block:'center', inline:'nearest'}); }catch(_){ rows[i].scrollIntoView(); }
+        break;
       }
+    }
+  }
+
+  // --- click shiv: translate tap -> click on rows (no highlight-only state here) ---
+  function install(){
+    var tbody = q('#tbl tbody');
+    if(!tbody || tbody.__touchClickShiv__) return;
+    tbody.__touchClickShiv__ = true;
+
+    // CSS nudge to improve tap behavior
+    try{
+      var st = document.createElement('style');
+      st.textContent = "#tbl tbody tr{-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;cursor:pointer;}";
+      document.head.appendChild(st);
     }catch(e){}
-  });
+
+    var tStart=0, sx=0, sy=0, moved=false, targetRow=null;
+
+    tbody.addEventListener('touchstart', function(e){
+      if(e.touches && e.touches.length>1) return;
+      var t = e.touches ? e.touches[0] : e;
+      var tr = e.target.closest ? e.target.closest('tr') : null;
+      if(!tr) return;
+      tStart = Date.now(); sx=t.clientX; sy=t.clientY; moved=false; targetRow=tr;
+    }, {passive:true});
+
+    tbody.addEventListener('touchmove', function(e){
+      if(!targetRow) return;
+      var t = e.touches ? e.touches[0] : e;
+      if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10){ moved=true; }
+    }, {passive:true});
+
+    tbody.addEventListener('touchend', function(e){
+      if(!targetRow) return; 
+      var dt = Date.now() - tStart;
+      if(!moved && dt < 500){ // treat as tap
+        // prevent ghost click
+        try{ e.preventDefault(); }catch(_){}
+        // dispatch click so your existing handlers run
+        try{
+          var evt = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
+          targetRow.dispatchEvent(evt);
+        }catch(ex){
+          if (targetRow.click) targetRow.click();
+        }
+        saveKeyFromRow(targetRow);
+      }
+      targetRow=null;
+    }, {passive:false}); // passive:false so preventDefault works to avoid ghost clicks
+
+    // Also save when your app marks a row as current
+    var tb = q('#tbl tbody');
+    try{
+      var mo = new MutationObserver(function(muts){
+        for (var k=0;k<muts.length;k++){
+          var m=muts[k];
+          if (m.type==='attributes' && m.attributeName==='class' && m.target.classList && m.target.classList.contains('current')){
+            saveKeyFromRow(m.target);
+          }
+        }
+      });
+      mo.observe(tb, {attributes:true, subtree:true, attributeFilter:['class']});
+    }catch(e){}
+  }
+
+  // When rows appear (after you press Generate or your app renders), try restoring once
+  function watchAndRestore(){
+    var root = byId('tbl') || document.body;
+    var done=false;
+    try{
+      var mo = new MutationObserver(function(){
+        install();
+        if(!done && q('#tbl tbody tr')){
+          done=true; restoreByKey();
+        }
+      });
+      mo.observe(root, {childList:true, subtree:true});
+    }catch(e){ install(); restoreByKey(); }
+    // Also attempt a delayed restore for good measure
+    setTimeout(function(){ install(); restoreByKey(); }, 500);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchAndRestore);
+  else watchAndRestore();
 })();
 </script>
 
