@@ -2648,143 +2648,166 @@ function restoreResumeOnLoad(){
 
 
 <script>
-// ===== Touch Click-Shiv (desktop unaffected) + gentle persistence =====
+// ===== ICU Unified Touch Overlay — Hybrid‑Safe Final =====
 (function(){
-  var isTouch = (('maxTouchPoints' in navigator && navigator.maxTouchPoints > 0) ||
-                 ('ontouchstart' in window) || /\b(Android|iPhone|iPad|iPod|Mobile|Tablet)\b/i.test(navigator.userAgent||''));
-  if (!isTouch) return;
-
+  // We react strictly to *touch pointers* via Pointer Events.
+  // Mouse/pen clicks remain untouched.
   function q(sel){ return document.querySelector(sel); }
   function qa(sel){ return document.querySelectorAll(sel); }
   function byId(id){ return document.getElementById(id); }
+  function now(){ return Date.now ? Date.now() : +new Date(); }
 
-  // --- gentle persistence (by row's first cell text) ---
-  var KEY='icu:lastRowKey';
-  function saveKeyFromRow(tr){
+  // ---------- Persistence (multi‑backend + URL hash) ----------
+  var KEY='icu:lastIndex';
+  function canUse(store){ try{ var t='__t'+Math.random(); store.setItem(t,'1'); store.removeItem(t); return true; }catch(e){ return False; } }
+  var stor=null; try{ stor = canUse(localStorage) ? localStorage : (canUse(sessionStorage) ? sessionStorage : null); }catch(e){ stor=null; }
+  function saveIndex(i){
+    try{ if(stor) stor.setItem(KEY, String(i)); }catch(e){}
+    try{ document.cookie = KEY + '=' + encodeURIComponent(String(i)) + '; path=/; max-age=31536000'; }catch(e){}
+    try{ var u = new URL(location.href); u.hash = 's='+String(i); history.replaceState(null,'',u.toString()); }catch(_){ location.hash='s='+String(i); }
+  }
+  function loadFromHash(){ try{ var h=(location.hash||'').replace(/^#/,''); if(!h) return null; var m=h.match(/(?:^|&)s=(\d+)/); return m? parseInt(m[1],10): null; }catch(e){ return null; } }
+  function loadIndex(){
+    var v=null; try{ v = stor? stor.getItem(KEY): null; }catch(e){}
+    if(v==null){ try{ var m=document.cookie.match(new RegExp('(?:^|; )'+KEY.replace(/[-.$?*|{}()[\]\\/+^]/g,'\\$&')+'=([^;]*)')); v = m ? decodeURIComponent(m[1]) : null; }catch(e){} }
+    if(v==null) v = loadFromHash();
+    var n = v==null ? null : parseInt(v,10); return isNaN(n)? null : n;
+  }
+
+  // ---------- Index helpers ----------
+  function getIndexFromRow(tr){
+    if(!tr) return 0;
+    if(tr.dataset && tr.dataset.i){ var n=parseInt(tr.dataset.i,10); if(!isNaN(n)) return n; }
+    var rows = tr.parentElement ? tr.parentElement.querySelectorAll('tr') : [];
+    for(var i=0;i<rows.length;i++){ if(rows[i]===tr) return i; }
+    return 0;
+  }
+  function setIndex(i){
+    if(typeof window.setCurrentIndexInCycle === 'function'){ try{ window.setCurrentIndexInCycle(i); return; }catch(e){} }
+    // Fallback: move .current class
+    var rows = qa('#tbl tbody tr');
+    for(var j=0;j<rows.length;j++){
+      var r=rows[j];
+      if(r.classList){ r.classList.toggle('current', j===i); }
+      else{ r.setAttribute('class', j===i ? 'current' : ''); }
+    }
+  }
+  function scrollToIndex(i){
+    var rows = qa('#tbl tbody tr'); var tr = rows[i];
+    if(!tr) return;
+    try{ tr.scrollIntoView({block:'center', inline:'nearest'}); }catch(_){ try{ tr.scrollIntoView(); }catch(__){} }
+  }
+  function activateNow(){
     try{
-      var key = tr && tr.cells && tr.cells[0] ? (tr.cells[0].innerText||tr.cells[0].textContent||'').trim() : '';
-      if (!key) return;
-      sessionStorage.setItem(KEY, key); // session-only to avoid privacy blockers
-      try{
-        var u = new URL(location.href);
-        u.hash = 'k='+encodeURIComponent(key);
-        history.replaceState(null,'',u.toString());
-      }catch(_){ location.hash='k='+encodeURIComponent(key); }
+      if (typeof window.isStarted === 'boolean' && window.isStarted){
+        if (typeof window.playCurrent === 'function') window.playCurrent();
+      } else if (typeof window.start === 'function'){
+        window.start();
+      }
     }catch(e){}
   }
-  function loadKey(){
-    var v=null;
-    try{ v = sessionStorage.getItem(KEY); }catch(e){}
-    if(!v){
-      try{
-        var h=(location.hash||'').replace(/^#/,''); if(h){
-          var m=h.match(/(?:^|&)k=([^&]+)/); if(m){ v = decodeURIComponent(m[1]); }
-        }
-      }catch(e){}
-    }
-    return v;
-  }
-  function restoreByKey(){
-    var want = loadKey(); if(!want) return;
-    var rows = qa('#tbl tbody tr'); if(!rows.length) return;
-    for (var i=0;i<rows.length;i++){
-      var c0 = rows[i].cells && rows[i].cells[0] ? (rows[i].cells[0].innerText||rows[i].cells[0].textContent||'').trim() : '';
-      if (c0 === want){
-        // Dispatch a click so your normal selection logic runs
-        try{
-          var evt = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
-          rows[i].dispatchEvent(evt);
-        }catch(e){
-          rows[i].click && rows[i].click();
-        }
-        // Scroll it into view
-        try{ rows[i].scrollIntoView({block:'center', inline:'nearest'}); }catch(_){ rows[i].scrollIntoView(); }
-        break;
-      }
-    }
-  }
 
-  // --- click shiv: translate tap -> click on rows (no highlight-only state here) ---
-  function install(){
+  // ---------- Touch handler (Pointer Events) ----------
+  function installTouch(){
     var tbody = q('#tbl tbody');
-    if(!tbody || tbody.__touchClickShiv__) return;
-    tbody.__touchClickShiv__ = true;
+    if(!tbody || tbody.__icuUnifiedTouch__) return;
+    tbody.__icuUnifiedTouch__ = true;
 
-    // CSS nudge to improve tap behavior
+    // CSS nudge to improve taps (no effect on desktop clicks)
     try{
       var st = document.createElement('style');
       st.textContent = "#tbl tbody tr{-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;cursor:pointer;}";
       document.head.appendChild(st);
     }catch(e){}
 
-    var tStart=0, sx=0, sy=0, moved=false, targetRow=null;
+    var downInfo = {id:null, x:0, y:0, row:null, at:0};
+    var MOVE=10, LONG=420, timer=null;
 
-    tbody.addEventListener('touchstart', function(e){
-      if(e.touches && e.touches.length>1) return;
-      var t = e.touches ? e.touches[0] : e;
-      var tr = e.target.closest ? e.target.closest('tr') : null;
-      if(!tr) return;
-      tStart = Date.now(); sx=t.clientX; sy=t.clientY; moved=false; targetRow=tr;
+    tbody.addEventListener('pointerdown', function(e){
+      if(e.pointerType !== 'touch') return; // ignore mouse/pen
+      var tr = e.target.closest ? e.target.closest('tr') : null; if(!tr) return;
+      downInfo.id = e.pointerId; downInfo.x=e.clientX; downInfo.y=e.clientY; downInfo.row=tr; downInfo.at=now();
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        timer=null;
+        var idx=getIndexFromRow(downInfo.row);
+        setIndex(idx); saveIndex(idx); scrollToIndex(idx); activateNow();
+      }, LONG);
     }, {passive:true});
 
-    tbody.addEventListener('touchmove', function(e){
-      if(!targetRow) return;
-      var t = e.touches ? e.touches[0] : e;
-      if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10){ moved=true; }
-    }, {passive:true});
-
-    tbody.addEventListener('touchend', function(e){
-      if(!targetRow) return; 
-      var dt = Date.now() - tStart;
-      if(!moved && dt < 500){ // treat as tap
-        // prevent ghost click
-        try{ e.preventDefault(); }catch(_){}
-        // dispatch click so your existing handlers run
-        try{
-          var evt = new MouseEvent('click', {bubbles:true, cancelable:true, view:window});
-          targetRow.dispatchEvent(evt);
-        }catch(ex){
-          if (targetRow.click) targetRow.click();
+    tbody.addEventListener('pointermove', function(e){
+      if(e.pointerType !== 'touch') return;
+      if(timer){
+        if(Math.abs(e.clientX - downInfo.x) > MOVE || Math.abs(e.clientY - downInfo.y) > MOVE){
+          clearTimeout(timer); timer=null;
         }
-        saveKeyFromRow(targetRow);
       }
-      targetRow=null;
-    }, {passive:false}); // passive:false so preventDefault works to avoid ghost clicks
+    }, {passive:true});
 
-    // Also save when your app marks a row as current
-    var tb = q('#tbl tbody');
+    tbody.addEventListener('pointerup', function(e){
+      if(e.pointerType !== 'touch') return;
+      if(timer){ // quick tap
+        clearTimeout(timer); timer=null;
+        if(downInfo.row){
+          var idx=getIndexFromRow(downInfo.row);
+          setIndex(idx); saveIndex(idx); scrollToIndex(idx); activateNow();
+        }
+      }
+      downInfo.id=null; downInfo.row=null;
+    }, {passive:true});
+
+    tbody.addEventListener('pointercancel', function(e){
+      if(e.pointerType !== 'touch') return;
+      if(timer){ clearTimeout(timer); timer=null; }
+      downInfo.id=null; downInfo.row=null;
+    }, {passive:true});
+  }
+
+  // ---------- Save on selection change (regardless of input type) ----------
+  function observeSaves(){
+    var tb = q('#tbl tbody'); if(!tb || tb.__icuSaveUnified__) return;
     try{
       var mo = new MutationObserver(function(muts){
-        for (var k=0;k<muts.length;k++){
+        for(var k=0;k<muts.length;k++){
           var m=muts[k];
-          if (m.type==='attributes' && m.attributeName==='class' && m.target.classList && m.target.classList.contains('current')){
-            saveKeyFromRow(m.target);
+          if(m.type==='attributes' && m.attributeName==='class' && m.target.classList && m.target.classList.contains('current')){
+            var rows = qa('#tbl tbody tr');
+            for(var j=0;j<rows.length;j++){ if(rows[j]===m.target){ saveIndex(j); break; } }
           }
         }
       });
       mo.observe(tb, {attributes:true, subtree:true, attributeFilter:['class']});
+      tb.__icuSaveUnified__ = true;
     }catch(e){}
   }
 
-  // When rows appear (after you press Generate or your app renders), try restoring once
-  function watchAndRestore(){
+  // ---------- Restore after rows exist ----------
+  function restoreWhenReady(){
     var root = byId('tbl') || document.body;
-    var done=false;
+    var did=false;
     try{
       var mo = new MutationObserver(function(){
-        install();
-        if(!done && q('#tbl tbody tr')){
-          done=true; restoreByKey();
+        installTouch(); observeSaves();
+        if(!did && qa('#tbl tbody tr').length>0){
+          var idx = loadIndex();
+          if(idx!=null){ setIndex(idx); scrollToIndex(idx); }
+          did=true;
         }
       });
-      mo.observe(root, {childList:true, subtree:true});
-    }catch(e){ install(); restoreByKey(); }
-    // Also attempt a delayed restore for good measure
-    setTimeout(function(){ install(); restoreByKey(); }, 500);
+      mo.observe(root, {subtree:true, childList:true});
+    }catch(e){ installTouch(); observeSaves(); }
+    // Also attempt a delayed restore in case rows are already present
+    setTimeout(function(){
+      installTouch(); observeSaves();
+      if(!did && qa('#tbl tbody tr').length>0){
+        var idx = loadIndex(); if(idx!=null){ setIndex(idx); scrollToIndex(idx); }
+      }
+    }, 400);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchAndRestore);
-  else watchAndRestore();
+  // ---------- Kick off ----------
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', restoreWhenReady);
+  else restoreWhenReady();
 })();
 </script>
 
