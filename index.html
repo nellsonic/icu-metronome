@@ -2309,8 +2309,9 @@ async function ensureAudio(){
   if(!audioCtx){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = (+byId('volume').value||50)/100;
     masterGain.connect(audioCtx.destination);
+    try{ setEffectiveGainFromSlider(); }catch(_){ masterGain.gain.value = Math.max(0, Math.min(1, ((+document.getElementById('volume')?.value||50)/100) * (document.getElementById('allowFullVolume')?.checked ? 1 : 0.4) )); }
+
   }
   if(audioCtx.state === "suspended"){ try{ await audioCtx.resume(); }catch(_ ){} }
 }
