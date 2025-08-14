@@ -2309,8 +2309,9 @@ async function ensureAudio(){
   if(!audioCtx){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = (+byId('volume').value||50)/100;
     masterGain.connect(audioCtx.destination);
+    try{ setEffectiveGainFromSlider(); }catch(_){ masterGain.gain.value = Math.max(0, Math.min(1, ((+document.getElementById('volume')?.value||50)/100) * (document.getElementById('allowFullVolume')?.checked ? 1 : 0.4) )); }
+
   }
   if(audioCtx.state === "suspended"){ try{ await audioCtx.resume(); }catch(_ ){} }
 }
@@ -2808,6 +2809,131 @@ function restoreResumeOnLoad(){
   // ---------- Kick off ----------
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', restoreWhenReady);
   else restoreWhenReady();
+})();
+</script>
+
+
+<!-- UNIVERSAL: header/reader-aware scroll using CSS scroll-margin + auto obstruction detection -->
+<style>
+  /* Make every table row respect a dynamic top margin for scrollIntoView */
+  #tbl tbody tr { scroll-margin-top: var(--obstructionTop, 0px); }
+</style>
+<script>
+(function(){
+  function getWrapper(){
+    const tbl = document.getElementById('tbl');
+    if (!tbl) return null;
+    const withOverflow = tbl.closest('div[style*="overflow:auto"]');
+    return withOverflow || tbl.parentElement;
+  }
+
+  // Compute how much space at the top is occupied by sticky/fixed UI that could cover row 1
+  function computeObstructionTop() {
+    const wrapper = getWrapper();
+    if (!wrapper) return 0;
+    const wRect = wrapper.getBoundingClientRect();
+
+    // Candidates: table THEAD, cyclebar, cycle label, any sticky/fixed element overlapping horizontally
+    const candidates = [];
+    const tbl = document.getElementById('tbl');
+    if (tbl && tbl.tHead) candidates.push(tbl.tHead);
+    const maybe = [document.querySelector('.cyclebar'), document.querySelector('#cycleLabel')];
+    maybe.forEach(el => { if (el) candidates.push(el); });
+
+    // Also scan DOM for potential sticky/fixed elements
+    const all = Array.from(document.querySelectorAll('body *'));
+    for (const el of all){
+      const cs = window.getComputedStyle(el);
+      if (cs.position === 'sticky' || cs.position === 'fixed'){
+        candidates.push(el);
+      }
+    }
+
+    let obstruction = 0;
+    const wLeft = wRect.left, wRight = wRect.right;
+    for (const el of candidates){
+      if (!el || !el.getBoundingClientRect) continue;
+      const r = el.getBoundingClientRect();
+      // Horizontal overlap with wrapper?
+      const overlapX = Math.min(wRight, r.right) - Math.max(wLeft, r.left);
+      if (overlapX > 0) {
+        // Only consider elements that sit above or touching wrapper top
+        if (r.bottom > wRect.top && r.top <= wRect.top + 80 /* small tolerance */){
+          obstruction = Math.max(obstruction, Math.ceil(r.bottom - wRect.top));
+        }
+      }
+    }
+    // Clamp to non-negative
+    return Math.max(0, obstruction);
+  }
+
+  function setObstructionVar(){
+    const px = computeObstructionTop();
+    document.documentElement.style.setProperty('--obstructionTop', px + 'px');
+  }
+
+  function scrollRow1IntoView() {
+    const tbl = document.getElementById('tbl');
+    if (!tbl) return;
+    const wrapper = getWrapper();
+    const row1 = tbl.tBodies && tbl.tBodies[0] ? tbl.tBodies[0].rows[0] : null;
+    if (!row1 || !wrapper) return;
+
+    // Reset wrapper first to avoid partial offset
+    wrapper.scrollTop = 0;
+
+    // Use CSS scroll-margin-top to account for any obstruction
+    // Perform a few frames in case layout shifts
+    let passes = 3;
+    const step = () => {
+      setObstructionVar();
+      row1.scrollIntoView({ behavior: 'instant', block: 'start' });
+      if (--passes > 0) {
+        if (window.requestAnimationFrame) requestAnimationFrame(step);
+        else setTimeout(step, 16);
+      }
+    };
+    if (window.requestAnimationFrame) requestAnimationFrame(step);
+    else step();
+  }
+
+  function onReady(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn, { once:true }); }
+
+  onReady(() => { setObstructionVar(); });
+
+  // Keep obstruction var up-to-date
+  window.addEventListener('resize', setObstructionVar);
+  window.addEventListener('orientationchange', setObstructionVar);
+  if (document.fonts && document.fonts.ready) { document.fonts.ready.then(setObstructionVar).catch(()=>{}); }
+
+  // React to content or theme changes
+  if ('MutationObserver' in window){
+    const mo = new MutationObserver(() => setTimeout(setObstructionVar, 0));
+    mo.observe(document.documentElement, { attributes:true, childList:true, subtree:true });
+  }
+  if ('ResizeObserver' in window){
+    const tbl = document.getElementById('tbl');
+    if (tbl){
+      const ro = new ResizeObserver(() => setObstructionVar());
+      ro.observe(tbl);
+    }
+    const wrapper = getWrapper();
+    if (wrapper){
+      const ro2 = new ResizeObserver(() => setObstructionVar());
+      ro2.observe(wrapper);
+    }
+  }
+
+  // Hook cycle changes and manual cycle advance
+  document.addEventListener('cycleChanged', scrollRow1IntoView);
+  const origAdvanceCycle = window.advanceCycle;
+  if (typeof origAdvanceCycle === 'function') {
+    window.advanceCycle = function(...args){
+      const res = origAdvanceCycle.apply(this, args);
+      scrollRow1IntoView();
+      return res;
+    };
+  }
 })();
 </script>
 
