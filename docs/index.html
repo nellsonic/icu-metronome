@@ -1759,6 +1759,24 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 }
 </style>
 
+
+<style id="blue-panel-fallback-css">
+/* iPad/Safari fallback: parent selectors like :has() can fail.
+   Use JS-added classes to keep Blue theme panels consistent. */
+
+/* Non-table cards (controls) use panel background */
+:root[data-theme='blue'] .card.no-tbl .bd,
+:root[data-theme='blue'] .card.no-tbl .bd > div[style*="overflow:auto"]{
+  background: var(--panel) !important;
+}
+
+/* Table card uses page bg so the table blends cleanly */
+:root[data-theme='blue'] .card.has-tbl .bd,
+:root[data-theme='blue'] .card.has-tbl .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+</style>
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
@@ -3021,6 +3039,34 @@ document.addEventListener('DOMContentLoaded', function(){
     if(!lbl.style.alignItems) lbl.style.alignItems = 'center';
   }catch(e){ /* no-op */ }
 });
+</script>
+
+
+<script id="blue-panel-fallback-js">
+(function(){
+  function tagCards(){
+    var cards = document.querySelectorAll('.card');
+    cards.forEach(function(card){
+      // clear any previous tags
+      card.classList.remove('has-tbl','no-tbl');
+      if(card.querySelector('#tbl')){
+        card.classList.add('has-tbl');
+      }else{
+        card.classList.add('no-tbl');
+      }
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', tagCards);
+  }else{
+    tagCards();
+  }
+  // If the app mutates the DOM, re-tag on resize as a simple heuristic
+  window.addEventListener('resize', function(){
+    clearTimeout(window.__tagCardsTimer);
+    window.__tagCardsTimer = setTimeout(tagCards, 200);
+  }, { passive: true });
+})();
 </script>
 
 </body>
