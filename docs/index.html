@@ -3371,108 +3371,129 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
-<!-- iPad/Safari cycle restore v6: first-stable-current -> one-shot switch -->
+<!-- iPad/Safari cycle fix v7: robust resume (LS + cookie + hash) -->
 <script>
 (function(){
-  const LS_POS_KEY = 'icu.lastPos';
-  const LS_CYCLE_KEY = 'icu.lastCycle';
+  const RESUME_COOKIE = "icu_resume_v3";
 
-  function getSavedCycle(){
+  function setCookie(name, value, maxAgeDays){
     try{
-      const raw = localStorage.getItem(LS_POS_KEY);
-      if (raw){
-        const obj = JSON.parse(raw);
-        if (Number.isInteger(obj.cycle) && obj.cycle >= 1) return obj.cycle;
-      }
-      const v = localStorage.getItem(LS_CYCLE_KEY);
-      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-    }catch(e){}
-    return null;
+      const max = maxAgeDays ? `; max-age=${Math.floor(maxAgeDays*86400)}` : '';
+      document.cookie = `${name}=${encodeURIComponent(value)}; path=/${max}`;
+    }catch(_){}
   }
-  function saveCycle(cycle){
-    if (!Number.isInteger(cycle) || cycle < 1) return;
+  function getCookie(name){
     try{
-      let pos = {cycle, step:null};
-      const raw = localStorage.getItem(LS_POS_KEY);
-      if (raw){ try{ const old = JSON.parse(raw); pos.step = old.step ?? null; }catch(e){} }
-      localStorage.setItem(LS_POS_KEY, JSON.stringify(pos));
-      localStorage.setItem(LS_CYCLE_KEY, String(cycle));
-    }catch(e){}
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }catch(_){ return null; }
   }
-  function segs(){ 
-    const bar = document.querySelector('.cyclebar'); 
-    return bar ? Array.from(bar.querySelectorAll('.seg, .dot, [data-cycle], button')) : []; 
-  }
-  function curIdx(list){
-    let i = list.findIndex(el => el.classList && el.classList.contains('current'));
-    if (i !== -1) return i;
-    i = list.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed')==='true' || el.getAttribute('aria-current')==='true' || el.getAttribute('data-current')==='true'));
-    return i;
-  }
-  function oneShotSwitch(toCycle){
-    const list = segs();
-    if (!list.length) return;
-    const idx = Math.min(Math.max(toCycle-1,0), list.length-1);
-    const el = list[idx];
-    if (!el) return;
-    try{ el.click(); }catch(e){}
-    try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }catch(e){}
-    try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle: toCycle}})); }catch(e){}
+  function parseHashResume(){
+    try{
+      const h = (location.hash||'').replace(/^#/, '');
+      const parts = new URLSearchParams(h);
+      const c = parts.get('c');
+      const i = parts.get('i');
+      const out = {};
+      if (c && !isNaN(parseInt(c,10))) out.cycle = parseInt(c,10);
+      if (i && !isNaN(parseInt(i,10))) out.index = parseInt(i,10);
+      return out;
+    }catch(_){ return {}; }
   }
 
-  // Edge-triggered save when .current changes
-  let lastSaved = -1;
-  const saver = new MutationObserver(()=>{
-    const list = segs();
-    if (!list.length) return;
-    const i = curIdx(list);
-    if (i !== -1 && i !== lastSaved){
-      lastSaved = i;
-      saveCycle(i+1);
-    }
-  });
+  // Keep original references if present
+  const _saveResumeState = (typeof saveResumeState === 'function') ? saveResumeState : null;
 
-  // One-shot restore right after the app first sets any current cycle
-  const desired = getSavedCycle();
-  let done = false;
-  const firstSetWatcher = new MutationObserver(()=>{
-    if (done) return;
-    const list = segs();
-    const i = curIdx(list);
-    if (i !== -1){
-      // App has chosen its initial cycle (often 1). Immediately switch once.
-      done = true;
-      queueMicrotask(()=>{
-        if (Number.isInteger(desired) && desired > 0 && desired-1 !== i){
-          oneShotSwitch(desired);
+  // Override: save to localStorage (existing), plus cookie, and (optionally) hash (we won't touch hash to avoid flicker)
+  window.saveResumeState = function(){
+    try{
+      // Mirror original behavior first so STORE_KEY stays in sync
+      if (_saveResumeState) { try{ _saveResumeState(); }catch(_){ } }
+    }catch(_){}
+
+    try{
+      // Gather resume info from current globals
+      const s = {};
+      try{
+        s.cycle = (typeof currentCycle !== 'undefined' && currentCycle) ? currentCycle : 1;
+        s.index  = (typeof currentIndexInCycle !== 'undefined' && currentIndexInCycle) ? currentIndexInCycle : 0;
+        // If we can resolve a tempo row for additional debugging (not required)
+        if (typeof cycleMap !== 'undefined' && cycleMap && typeof allRows !== 'undefined' && Array.isArray(allRows)){
+          const idxs = cycleMap.get ? cycleMap.get(s.cycle) : null;
+          if (Array.isArray(idxs) && idxs.length){
+            const gi = idxs[Math.max(0, Math.min(s.index || 0, idxs.length-1))];
+            const r = allRows[gi];
+            s.tempo = r && +r.tempo || null;
+          }
         }
-        teardown();
-      });
-    }
-  });
+      }catch(_){}
 
-  function setup(){
-    const bar = document.querySelector('.cyclebar') || document.body;
-    firstSetWatcher.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
-    saver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
-  }
-  function teardown(){
-    try{ firstSetWatcher.disconnect(); }catch(e){}
-    // keep saver running during the session so future reloads have the latest
-  }
+      // Save cookie fallback
+      setCookie(RESUME_COOKIE, JSON.stringify(s), 365);
+      // Do not alter the hash here to avoid interfering with the touch overlay's `#s=`
+    }catch(_){}
+  };
 
-  if (document.readyState === 'complete' || document.readyState === 'interactive'){
-    setup();
-  }else{
-    window.addEventListener('DOMContentLoaded', setup, {once:true});
-  }
-  window.addEventListener('pageshow', setup);
-  window.addEventListener('pagehide', ()=>{
-    // Persist cycle on exit
-    const list = segs();
-    const i = curIdx(list);
-    if (i >= 0) saveCycle(i+1);
-  });
+  // Override restore to use LS -> cookie -> hash cascade
+  window.restoreResumeOnLoad = function(){
+    try{
+      // 1) Try existing STORE_KEY payload
+      let cSaved = 0, iSaved = 0;
+      try{
+        const key = (typeof STORE_KEY !== 'undefined') ? STORE_KEY : null;
+        if (key){
+          const s = JSON.parse(localStorage.getItem(key)||"{}");
+          if (s && s.resumeCycle != null) cSaved = parseInt(s.resumeCycle, 10);
+          if (s && s.resumeIndex != null) iSaved = parseInt(s.resumeIndex, 10);
+        }
+      }catch(_){}
+
+      // 2) Cookie fallback if missing or invalid
+      if (!(cSaved >= 1)){
+        try{
+          const raw = getCookie(RESUME_COOKIE);
+          if (raw){
+            const j = JSON.parse(raw);
+            if (j && j.cycle != null) cSaved = parseInt(j.cycle,10);
+            if (j && j.index != null) iSaved = parseInt(j.index,10);
+          }
+        }catch(_){}
+      }
+
+      // 3) Hash fallback (c and i) if still missing
+      if (!(cSaved >= 1)){
+        const h = parseHashResume();
+        if (h.cycle != null) cSaved = h.cycle;
+        if (h.index != null) iSaved = h.index;
+      }
+
+      // If we still have nothing sensible, bail
+      if (!(cSaved >= 1)) cSaved = 1;
+      if (!(iSaved >= 0)) iSaved = 0;
+
+      // Ensure a plan exists
+      const idxs0 = (typeof cycleMap !== 'undefined' && cycleMap && cycleMap.get) ? cycleMap.get(cSaved) : null;
+      if (!Array.isArray(idxs0) || !idxs0.length){
+        try{ generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); }catch(_){
+          try{ generate(); }catch(__){}
+        }
+      }
+
+      // Clamp and apply
+      const maxC = +document.getElementById('cycles').value || 1;
+      let c = cSaved; if (c < 1) c = 1; if (c > maxC) c = maxC;
+      window.currentCycle = c;
+      if (typeof renderCycle === 'function') renderCycle();
+
+      const idxs = (typeof cycleMap !== 'undefined' && cycleMap && cycleMap.get) ? (cycleMap.get(c)||[]) : [];
+      let i = iSaved; if (i < 0) i = 0; if (i >= idxs.length) i = Math.max(0, idxs.length-1);
+      if (typeof setCurrentIndexInCycle === 'function') setCurrentIndexInCycle(i);
+    }catch(_){/*noop*/}
+  };
+
+  // Save on exit (ensure cookie has latest)
+  window.addEventListener('pagehide', function(){ try{ saveResumeState(); }catch(_){ } });
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden'){ try{ saveResumeState(); }catch(_){ } } });
 })();
 </script>
 
