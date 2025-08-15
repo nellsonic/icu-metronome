@@ -3,16 +3,16 @@
 <html lang="en">
 <head>
 
-<!-- ICU desired-cycle bootstrap -->
+<!-- ICU desired-cycle bootstrap (minimal) -->
 <script>
 (function(){
-  function icuReadCookie(name){
+  function getCookie(name){
     try{
       const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
       return m ? decodeURIComponent(m[1]) : null;
     }catch(_){ return null; }
   }
-  function icuDesiredCycle(){
+  function desiredCycle(){
     try{
       if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
         const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
@@ -34,7 +34,7 @@
       }
     }catch(_){}
     try{
-      const raw = icuReadCookie('icu_resume_v3');
+      const raw = getCookie('icu_resume_v3');
       if (raw){
         const j = JSON.parse(raw);
         if (Number.isInteger(j?.cycle) && j.cycle >= 1) return j.cycle;
@@ -42,7 +42,7 @@
     }catch(_){}
     return null;
   }
-  window.__icuDesiredCycle = icuDesiredCycle();
+  window.__icuDesiredCycle = desiredCycle();
 })();
 </script>
 
@@ -2271,14 +2271,7 @@ let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDe
 let currentIndexInCycle = 0;
 
 // Generator (confirmed standard rules)
-\1
-
-  // ICU: auto-enable preserveCycle on first load if a saved cycle exists
-  if (!opts) opts = {};
-  if (opts.preserveCycle === undefined) {
-    opts.preserveCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1);
-  }
-
+function generate(opts={preserveCycle:false}){
 
   if(isStarted){ handoffPending = true; }
 // Capture previous context for preserving cycle/step
