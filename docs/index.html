@@ -2,96 +2,6 @@
 
 <html lang="en">
 <head>
-
-<!-- ICU cycle resume via URL hash (#c=) with fallbacks -->
-<script>
-(function(){
-  function parseHash(){
-    const h = (location.hash || '').replace(/^#/, '');
-    const out = new URLSearchParams(h);
-    return out;
-  }
-  function getHashInt(name){
-    try{
-      const p = parseHash();
-      const v = p.get(name);
-      if (v == null) return null;
-      const n = parseInt(v, 10);
-      return Number.isFinite(n) ? n : null;
-    }catch(_){ return null; }
-  }
-  function setHashKV(name, val){
-    try{
-      const p = parseHash();
-      if (val == null) p.delete(name); else p.set(name, String(val));
-      const s = p.toString();
-      const newHash = s ? ('#' + s) : '';
-      // Avoid adding a history entry
-      if (location.hash !== newHash){
-        history.replaceState(null, '', location.pathname + location.search + newHash);
-      }
-    }catch(_){}
-  }
-  window.__icuHash = {get:getHashInt, set:setHashKV};
-
-  function ls(key){ try{ return localStorage.getItem(key); }catch(_){ return null; } }
-  function desiredCycle(){
-    // 0) URL hash wins on iOS
-    const cH = window.__icuHash.get('c');
-    if (Number.isInteger(cH) && cH >= 1) return cH;
-
-    // 1) STORE_KEY.resumeCycle
-    try{
-      if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
-        const s = JSON.parse(ls(window.STORE_KEY)||"{}");
-        if (s && s.resumeCycle != null){
-          const c = parseInt(s.resumeCycle,10);
-          if (c >= 1) return c;
-        }
-      }
-    }catch(_){}
-
-    // 2) icu.lastCycle
-    const v = ls('icu.lastCycle');
-    if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-
-    // 3) icu.lastPos.cycle
-    try{
-      const raw = ls('icu.lastPos');
-      if (raw){
-        const obj = JSON.parse(raw);
-        if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
-      }
-    }catch(_){}
-
-    return null;
-  }
-  window.__icuDesiredCycle = desiredCycle();
-
-  // Expose a safe updater for later
-  window.__icuPersistCycle = function(c){
-    try{
-      if (!(c >= 1)) return;
-      window.__icuHash.set('c', c);
-      try{ localStorage.setItem('icu.lastCycle', String(c)); }catch(_){}
-      try{
-        const raw = localStorage.getItem('icu.lastPos');
-        let pos = {cycle:c, step:null};
-        if (raw){ try{ const o = JSON.parse(raw); pos.step = o.step ?? null; }catch(_){ } }
-        localStorage.setItem('icu.lastPos', JSON.stringify(pos));
-      }catch(_){}
-      try{
-        if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
-          const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
-          s.resumeCycle = c;
-          localStorage.setItem(window.STORE_KEY, JSON.stringify(s));
-        }
-      }catch(_){}
-    }catch(_){}
-  };
-})();
-</script>
-
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Interleaved Clicking Up Metronome</title>
@@ -2313,7 +2223,7 @@ function buildAcrossSeq(N){
 // State
 let allRows = [];
 let cycleMap = new Map();
-let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1);
+let currentCycle = 1;
 let currentIndexInCycle = 0;
 
 // Generator (confirmed standard rules)
@@ -2467,8 +2377,7 @@ function generate(opts={preserveCycle:false}){
     }
   }
 } else {
-  const maxC = +byId('cycles').value || 1;
-  currentCycle = Math.max(1, Math.min(maxC, (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1)));
+  currentCycle = 1;
   currentIndexInCycle = 0;
 }
 
@@ -2833,27 +2742,26 @@ function restoreResumeOnLoad(){
   try{
     const key = STORE_KEY;
     const s = JSON.parse(localStorage.getItem(key)||"{}");
-    const cSaved = +s.resumeCycle || 1;
-    const iSaved = +s.resumeIndex || 0;
-
-    // If no plan yet, build one first (preserve cycle/step); suppress scroll to avoid jumps
+    let cSaved = +s.resumeCycle || 1;
+    let iSaved = +s.resumeIndex || 0;
+    const maxC0 = +byId('cycles').value || 1;
+    if (!(cSaved >= 1)) cSaved = 1;
+    if (cSaved > maxC0) cSaved = maxC0;
+    currentCycle = cSaved;
     const idxs0 = (cycleMap && cycleMap.get && cycleMap.get(cSaved)) || [];
     if (!Array.isArray(idxs0) || idxs0.length === 0){
       try{ generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); }catch(_){
         try{ generate(); }catch(_2){}
       }
     }
-
     const maxC = +byId('cycles').value || 1;
-    let c = cSaved;
-    if (c < 1) c = 1; if (c > maxC) c = maxC;
-
-    currentCycle = c;
-    renderCycle();
-    const idxs = cycleMap.get(currentCycle) || [];
-    let i = iSaved;
-    if (i < 0) i = 0; if (i >= idxs.length) i = Math.max(0, idxs.length-1);
-    setCurrentIndexInCycle(i);
+    if (cSaved > maxC) cSaved = maxC;
+    if (!(iSaved >= 0)) iSaved = 0;
+    currentCycle = cSaved;
+    if (typeof renderCycle === 'function') renderCycle();
+    const idxs = (cycleMap && cycleMap.get && cycleMap.get(currentCycle)) || [];
+    if (Array.isArray(idxs) && idxs.length && iSaved >= idxs.length) iSaved = Math.max(0, idxs.length-1);
+    if (typeof setCurrentIndexInCycle === 'function') setCurrentIndexInCycle(iSaved);
   }catch(_){/*noop*/}
 }
 
@@ -3458,34 +3366,6 @@ document.addEventListener('DOMContentLoaded', function(){
     wireEvents();               // attach listeners
     savePersist();              // persist any defaults
   });
-})();
-</script>
-
-
-<script>
-(function(){
-  function wrapRender(){
-    const fn = window.renderCycle;
-    if (typeof fn !== 'function' || fn.__icuWrapped) return;
-    const w = function(...args){
-      const out = fn.apply(this, args);
-      try{
-        if (typeof window.currentCycle === 'number' && window.currentCycle >= 1){
-          if (typeof window.__icuPersistCycle === 'function') window.__icuPersistCycle(window.currentCycle);
-        }
-      }catch(_){}
-      return out;
-    };
-    w.__icuWrapped = true;
-    window.renderCycle = w;
-  }
-  // Try now and on ready/pageshow
-  if (document.readyState === 'complete' || document.readyState === 'interactive'){
-    wrapRender();
-  } else {
-    window.addEventListener('DOMContentLoaded', wrapRender, {once:true});
-  }
-  window.addEventListener('pageshow', wrapRender);
 })();
 </script>
 
