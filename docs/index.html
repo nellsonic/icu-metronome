@@ -2,6 +2,115 @@
 
 <html lang="en">
 <head>
+
+<!-- iPad/Safari cycle restore v5: pre-init storage shim -->
+<script>
+(function(){
+  try{
+    const LS_POS_KEY = 'icu.lastPos';
+    const LS_CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
+
+    // Determine the desired cycle ("authoritative" value)
+    function getDesiredCycle(){
+      try{
+        // Prefer explicit lastCycle
+        for (const k of LS_CYCLE_KEYS){
+          const v = localStorage.getItem(k);
+          if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+        }
+        // Fall back to lastPos.cycle
+        const raw = localStorage.getItem(LS_POS_KEY);
+        if (raw){
+          const obj = JSON.parse(raw);
+          if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
+        }
+      }catch(e){}
+      return null;
+    }
+
+    // Keep an authoritative cycle cached for this page load
+    const desiredCycle = getDesiredCycle();
+
+    // If we don't have a desired cycle, don't patch anything
+    if (!Number.isInteger(desiredCycle) || desiredCycle < 1){
+      return;
+    }
+
+    // Patch getItem to inject the desired cycle into 'icu.lastPos'
+    const _getItem = Storage.prototype.getItem;
+    const _setItem = Storage.prototype.setItem;
+    let enabled = true;
+
+    Storage.prototype.getItem = function(key){
+      const val = _getItem.apply(this, arguments);
+      if (!enabled) return val;
+      try{
+        // Keep 'icu.lastCycle' in sync
+        if (LS_CYCLE_KEYS.includes(key)){
+          return String(desiredCycle);
+        }
+        if (key === LS_POS_KEY){
+          if (val){
+            try{
+              const obj = JSON.parse(val);
+              // Merge: preserve existing step, overwrite cycle
+              const merged = {
+                ...obj,
+                cycle: desiredCycle
+              };
+              return JSON.stringify(merged);
+            }catch(e){
+              // If not JSON, replace with minimal structure
+              return JSON.stringify({cycle: desiredCycle, step: null});
+            }
+          }else{
+            return JSON.stringify({cycle: desiredCycle, step: null});
+          }
+        }
+      }catch(e){}
+      return val;
+    };
+
+    // Patch setItem to keep our cycle stored authoritatively when the app saves
+    Storage.prototype.setItem = function(key, value){
+      try{
+        if (key === LS_POS_KEY && value){
+          try{
+            const obj = JSON.parse(value);
+            if (Number.isInteger(obj?.cycle) && obj.cycle >= 1){
+              // Mirror to 'icu.lastCycle' so future loads know the last cycle
+              _setItem.call(this, 'icu.lastCycle', String(obj.cycle));
+            }
+          }catch(e){}
+        }
+        if (LS_CYCLE_KEYS.includes(key)){
+          // Normalize to our canonical key
+          _setItem.call(this, 'icu.lastCycle', String(value));
+          return;
+        }
+      }catch(e){}
+      return _setItem.apply(this, arguments);
+    };
+
+    // Disable the shim shortly after init to avoid affecting runtime behavior
+    function disableShimSoon(){
+      // Give the app a brief window to finish initial reads
+      setTimeout(function(){ enabled = false; }, 1200);
+    }
+    if (document.readyState === 'complete' || document.readyState === 'interactive'){
+      disableShimSoon();
+    }else{
+      window.addEventListener('DOMContentLoaded', disableShimSoon, {once:true});
+    }
+    // Also ensure we disable after bfcache restores
+    window.addEventListener('pageshow', function(){ setTimeout(function(){ enabled = false; }, 1200); });
+
+  }catch(err){
+    // Fail quietly
+  }
+})();
+</script>
+
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Interleaved Clicking Up Metronome</title>
@@ -3366,160 +3475,6 @@ document.addEventListener('DOMContentLoaded', function(){
     updateSilenceInputDefault(true); // set to midpoint if linked or empty
     wireEvents();               // attach listeners
     savePersist();              // persist any defaults
-  });
-})();
-</script>
-
-
-<!-- iPad/Safari cycle restore v4: quiet settle + one-shot assert -->
-<script>
-(function(){
-  const LS_POS_KEY = 'icu.lastPos';
-  const LS_CYCLE_KEY = 'icu.lastCycle';
-
-  function getSavedCycle(){
-    try{
-      const raw = localStorage.getItem(LS_POS_KEY);
-      if (raw){
-        const obj = JSON.parse(raw);
-        if (Number.isInteger(obj.cycle) && obj.cycle >= 1) return obj.cycle;
-      }
-      const v = localStorage.getItem(LS_CYCLE_KEY);
-      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-    }catch(e){}
-    return null;
-  }
-  function saveCycle(cycle){
-    if (!Number.isInteger(cycle) || cycle < 1) return;
-    try{
-      let pos = {cycle, step:null};
-      const raw = localStorage.getItem(LS_POS_KEY);
-      if (raw){ try{ const old = JSON.parse(raw); pos.step = old.step ?? null; }catch(e){} }
-      localStorage.setItem(LS_POS_KEY, JSON.stringify(pos));
-      localStorage.setItem(LS_CYCLE_KEY, String(cycle));
-    }catch(e){}
-  }
-  function qsaSegments(){
-    const bar = document.querySelector('.cyclebar');
-    if (!bar) return [];
-    return Array.from(bar.querySelectorAll('.seg, .dot, [data-cycle], button'));
-  }
-  function currentIdx(segs){
-    let i = segs.findIndex(el => el.classList && el.classList.contains('current'));
-    if (i !== -1) return i;
-    i = segs.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-current') === 'true' || el.getAttribute('data-current') === 'true'));
-    return i;
-  }
-  function setCycleOneShot(cycle){
-    const segs = qsaSegments();
-    if (!segs.length) return false;
-    const target = Math.min(Math.max(cycle-1,0), segs.length-1);
-    const cur = currentIdx(segs);
-    if (cur === target) return true;
-    const el = segs[target];
-    if (!el) return false;
-    // One-shot: click once and return
-    try{ el.click(); }catch(e){}
-    try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }catch(e){}
-    try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle}})); }catch(e){}
-    return true;
-  }
-
-  // Track user intent to avoid overriding
-  let userRecentlyInteracted = false;
-  let userTimer = null;
-  function userPing(ms=900){
-    userRecentlyInteracted = true;
-    clearTimeout(userTimer);
-    userTimer = setTimeout(()=>{ userRecentlyInteracted = false; }, ms);
-  }
-  window.addEventListener('keydown', (e)=>{
-    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) userPing();
-  }, true);
-  document.addEventListener('pointerdown', (e)=>{
-    if (e.target.closest('.cyclebar, #prevCycleBtn, #nextCycleBtn')) userPing();
-  }, true);
-  document.addEventListener('click', (e)=>{
-    if (e.target.closest('.cyclebar, #prevCycleBtn, #nextCycleBtn')) userPing();
-  }, true);
-
-  // Edge-triggered save when .current changes
-  let lastSaved = -1;
-  const cycleObs = new MutationObserver(()=>{
-    const segs = qsaSegments();
-    if (!segs.length) return;
-    const idx = currentIdx(segs);
-    if (idx !== -1 && idx !== lastSaved){
-      lastSaved = idx;
-      saveCycle(idx + 1);
-    }
-  });
-
-  // Debounced "quiet window" detect across cyclebar + table
-  let quietTimer = null;
-  let applied = false;
-  const DEBOUNCE = 750;      // quiet window
-  const MAX_WINDOW = 8000;   // stop watching after 8s
-
-  function kickQuietTimer(){
-    if (applied) return;
-    clearTimeout(quietTimer);
-    quietTimer = setTimeout(()=>{
-      if (applied) return;
-      if (userRecentlyInteracted) return; // don't override user
-      const want = getSavedCycle();
-      if (Number.isInteger(want) && want > 0){
-        setCycleOneShot(want);  // assert once
-      }
-      applied = true;
-      teardown();
-    }, DEBOUNCE);
-  }
-
-  const tableObs = new MutationObserver(kickQuietTimer);
-
-  function setup(){
-    // Observe the cyclebar for current changes (to save) and for render activity (to debounce)
-    const bar = document.querySelector('.cyclebar') || document.body;
-    cycleObs.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
-    // Observe table renders
-    const tb = document.querySelector('#tbl tbody') || document.querySelector('#tbl') || document.body;
-    tableObs.observe(tb, {subtree:true, childList:true});
-
-    // Start a max window cutoff
-    setTimeout(()=>{ if (!applied) teardown(); }, MAX_WINDOW);
-
-    // Also start the quiet timer immediately so a static page still asserts once
-    kickQuietTimer();
-  }
-
-  function teardown(){
-    try{ cycleObs.disconnect(); }catch(e){}
-    try{ tableObs.disconnect(); }catch(e){}
-    clearTimeout(quietTimer);
-  }
-
-  // Lifecycle
-  function start(){
-    applied = false;
-    setup();
-  }
-  if (document.readyState === 'complete' || document.readyState === 'interactive'){
-    start();
-  }else{
-    window.addEventListener('DOMContentLoaded', start, {once:true});
-  }
-  window.addEventListener('pageshow', start);  // iOS bfcache
-
-  // Persist on pagehide/hidden
-  function persistOnExit(){
-    const segs = qsaSegments();
-    const idx = currentIdx(segs);
-    if (idx >= 0) saveCycle(idx + 1);
-  }
-  window.addEventListener('pagehide', persistOnExit);
-  document.addEventListener('visibilitychange', ()=>{
-    if (document.visibilityState === 'hidden') persistOnExit();
   });
 })();
 </script>
