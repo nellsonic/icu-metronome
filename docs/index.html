@@ -3371,129 +3371,162 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
-<!-- iPad/Safari cycle fix v7: robust resume (LS + cookie + hash) -->
+<!-- iPad/Safari cycle fix v8: wrap generate, prefer internal setters, save reliably -->
 <script>
 (function(){
-  const RESUME_COOKIE = "icu_resume_v3";
+  const POS_KEY = 'icu.lastPos';
+  const CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
+  const RESUME_COOKIE = 'icu_resume_v3';
 
-  function setCookie(name, value, maxAgeDays){
-    try{
-      const max = maxAgeDays ? `; max-age=${Math.floor(maxAgeDays*86400)}` : '';
-      document.cookie = `${name}=${encodeURIComponent(value)}; path=/${max}`;
-    }catch(_){}
-  }
-  function getCookie(name){
+  function readCookie(name){
     try{
       const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
       return m ? decodeURIComponent(m[1]) : null;
     }catch(_){ return null; }
   }
-  function parseHashResume(){
+  function writeCookie(name, value, days){
     try{
-      const h = (location.hash||'').replace(/^#/, '');
-      const parts = new URLSearchParams(h);
-      const c = parts.get('c');
-      const i = parts.get('i');
-      const out = {};
-      if (c && !isNaN(parseInt(c,10))) out.cycle = parseInt(c,10);
-      if (i && !isNaN(parseInt(i,10))) out.index = parseInt(i,10);
-      return out;
-    }catch(_){ return {}; }
+      const max = days ? `; max-age=${Math.floor(days*86400)}` : '';
+      document.cookie = `${name}=${encodeURIComponent(value)}; path=/${max}`;
+    }catch(_){}
   }
 
-  // Keep original references if present
-  const _saveResumeState = (typeof saveResumeState === 'function') ? saveResumeState : null;
-
-  // Override: save to localStorage (existing), plus cookie, and (optionally) hash (we won't touch hash to avoid flicker)
-  window.saveResumeState = function(){
+  function readSavedCycle(){
+    // 1) explicit cycle keys
+    for(const k of CYCLE_KEYS){
+      const v = localStorage.getItem(k);
+      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+    }
+    // 2) lastPos.cycle
     try{
-      // Mirror original behavior first so STORE_KEY stays in sync
-      if (_saveResumeState) { try{ _saveResumeState(); }catch(_){ } }
+      const raw = localStorage.getItem(POS_KEY);
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
+      }
     }catch(_){}
-
+    // 3) cookie
     try{
-      // Gather resume info from current globals
-      const s = {};
-      try{
-        s.cycle = (typeof currentCycle !== 'undefined' && currentCycle) ? currentCycle : 1;
-        s.index  = (typeof currentIndexInCycle !== 'undefined' && currentIndexInCycle) ? currentIndexInCycle : 0;
-        // If we can resolve a tempo row for additional debugging (not required)
-        if (typeof cycleMap !== 'undefined' && cycleMap && typeof allRows !== 'undefined' && Array.isArray(allRows)){
-          const idxs = cycleMap.get ? cycleMap.get(s.cycle) : null;
-          if (Array.isArray(idxs) && idxs.length){
-            const gi = idxs[Math.max(0, Math.min(s.index || 0, idxs.length-1))];
-            const r = allRows[gi];
-            s.tempo = r && +r.tempo || null;
-          }
-        }
-      }catch(_){}
-
-      // Save cookie fallback
-      setCookie(RESUME_COOKIE, JSON.stringify(s), 365);
-      // Do not alter the hash here to avoid interfering with the touch overlay's `#s=`
+      const raw = readCookie(RESUME_COOKIE);
+      if (raw){
+        const j = JSON.parse(raw);
+        if (Number.isInteger(j?.cycle) && j.cycle >= 1) return j.cycle;
+      }
     }catch(_){}
-  };
+    return null;
+  }
 
-  // Override restore to use LS -> cookie -> hash cascade
-  window.restoreResumeOnLoad = function(){
+  function writeSavedCycle(c){
+    if (!(c >= 1)) return;
     try{
-      // 1) Try existing STORE_KEY payload
-      let cSaved = 0, iSaved = 0;
-      try{
-        const key = (typeof STORE_KEY !== 'undefined') ? STORE_KEY : null;
-        if (key){
-          const s = JSON.parse(localStorage.getItem(key)||"{}");
-          if (s && s.resumeCycle != null) cSaved = parseInt(s.resumeCycle, 10);
-          if (s && s.resumeIndex != null) iSaved = parseInt(s.resumeIndex, 10);
-        }
-      }catch(_){}
+      localStorage.setItem('icu.lastCycle', String(c));
+      const raw = localStorage.getItem(POS_KEY);
+      let pos = {cycle:c, step:null};
+      if (raw){ try{ const o = JSON.parse(raw); pos.step = o.step ?? null; }catch(_){ } }
+      localStorage.setItem(POS_KEY, JSON.stringify(pos));
+      const idx = (typeof window.currentIndexInCycle === 'number') ? window.currentIndexInCycle : 0;
+      writeCookie(RESUME_COOKIE, JSON.stringify({cycle:c, index:idx}), 365);
+    }catch(_){}
+  }
 
-      // 2) Cookie fallback if missing or invalid
-      if (!(cSaved >= 1)){
-        try{
-          const raw = getCookie(RESUME_COOKIE);
-          if (raw){
-            const j = JSON.parse(raw);
-            if (j && j.cycle != null) cSaved = parseInt(j.cycle,10);
-            if (j && j.index != null) iSaved = parseInt(j.index,10);
-          }
-        }catch(_){}
+  function applyCycle(c){
+    if (!(c >= 1)) return false;
+    // Prefer internal functions if present
+    if (typeof window.setCurrentCycle === 'function'){ try{ window.setCurrentCycle(c); return true; }catch(_){ } }
+    if (typeof window.gotoCycle === 'function'){ try{ window.gotoCycle(c); return true; }catch(_){ } }
+    if (typeof window.renderCycle === 'function'){ try{ window.currentCycle = c; window.renderCycle(); return true; }catch(_){ } }
+    // Fallback: click appropriate cycle control
+    const segs = document.querySelectorAll('.cyclebar .seg, .cyclebar [data-cycle], .cyclebar button');
+    if (segs.length){
+      const idx = Math.min(Math.max(c-1,0), segs.length-1);
+      const el = segs[idx];
+      try{ el.click(); return true; }catch(_){}
+      try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); return true; }catch(_){}
+    }
+    return false;
+  }
+
+  // Observe cycle changes to persist once per change
+  let lastSaved = -1;
+  const cycleObserver = new MutationObserver(()=>{
+    const segs = document.querySelectorAll('.cyclebar .seg, .cyclebar [data-cycle], .cyclebar button');
+    if (!segs.length) return;
+    let idx = -1;
+    segs.forEach((el,i)=>{
+      if (el.classList.contains('current') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-pressed')==='true' || el.getAttribute('data-current')==='true'){
+        idx = i;
       }
+    });
+    if (idx !== -1 && idx !== lastSaved){
+      lastSaved = idx;
+      writeSavedCycle(idx+1);
+    }
+  });
+  function startObservers(){
+    const bar = document.querySelector('.cyclebar') || document.body;
+    cycleObserver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-current','aria-pressed','data-current']});
+  }
 
-      // 3) Hash fallback (c and i) if still missing
-      if (!(cSaved >= 1)){
-        const h = parseHashResume();
-        if (h.cycle != null) cSaved = h.cycle;
-        if (h.index != null) iSaved = h.index;
+  // Wrap generate so restore happens strictly AFTER plan build
+  const origGen = window.generate;
+  if (typeof origGen === 'function'){
+    window.generate = function(...args){
+      const ret = origGen.apply(this, args);
+      // Restore after DOM settles
+      queueMicrotask(()=>{
+        requestAnimationFrame(()=>{
+          requestAnimationFrame(()=>{
+            const c = readSavedCycle();
+            if (c >= 1) applyCycle(c);
+          });
+        });
+      });
+      return ret;
+    };
+  } else {
+    // If generate isn't defined yet, patch it later
+    Object.defineProperty(window, 'generate', {
+      configurable: true,
+      set(fn){
+        Object.defineProperty(window, 'generate', {value: fn, writable: false});
+        // Wrap the now-defined generate
+        const orig = window.generate;
+        window.generate = function(...args){
+          const ret = orig.apply(this, args);
+          queueMicrotask(()=>{
+            requestAnimationFrame(()=>{
+              requestAnimationFrame(()=>{
+                const c = readSavedCycle();
+                if (c >= 1) applyCycle(c);
+              });
+            });
+          });
+          return ret;
+        };
       }
+    });
+  }
 
-      // If we still have nothing sensible, bail
-      if (!(cSaved >= 1)) cSaved = 1;
-      if (!(iSaved >= 0)) iSaved = 0;
+  function initialRestore(){
+    startObservers();
+    const c = readSavedCycle();
+    if (!(c >= 1)) return;
+    let tries = 0, max = 30;
+    (function tick(){
+      const ok = applyCycle(c);
+      if (!ok && tries < max){ tries++; setTimeout(tick, 70); }
+    })();
+  }
 
-      // Ensure a plan exists
-      const idxs0 = (typeof cycleMap !== 'undefined' && cycleMap && cycleMap.get) ? cycleMap.get(cSaved) : null;
-      if (!Array.isArray(idxs0) || !idxs0.length){
-        try{ generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); }catch(_){
-          try{ generate(); }catch(__){}
-        }
-      }
-
-      // Clamp and apply
-      const maxC = +document.getElementById('cycles').value || 1;
-      let c = cSaved; if (c < 1) c = 1; if (c > maxC) c = maxC;
-      window.currentCycle = c;
-      if (typeof renderCycle === 'function') renderCycle();
-
-      const idxs = (typeof cycleMap !== 'undefined' && cycleMap && cycleMap.get) ? (cycleMap.get(c)||[]) : [];
-      let i = iSaved; if (i < 0) i = 0; if (i >= idxs.length) i = Math.max(0, idxs.length-1);
-      if (typeof setCurrentIndexInCycle === 'function') setCurrentIndexInCycle(i);
-    }catch(_){/*noop*/}
-  };
-
-  // Save on exit (ensure cookie has latest)
-  window.addEventListener('pagehide', function(){ try{ saveResumeState(); }catch(_){ } });
-  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden'){ try{ saveResumeState(); }catch(_){ } } });
+  if (document.readyState === 'complete' || document.readyState === 'interactive'){
+    initialRestore();
+  }else{
+    window.addEventListener('DOMContentLoaded', initialRestore, {once:true});
+  }
+  window.addEventListener('pageshow', initialRestore);
+  window.addEventListener('pagehide', ()=>{
+    if (window.currentCycle >= 1) writeSavedCycle(window.currentCycle);
+  });
 })();
 </script>
 
