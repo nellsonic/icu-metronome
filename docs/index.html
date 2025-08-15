@@ -1812,6 +1812,51 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 }
 </style>
 
+
+<style id="silence-row-style">
+.opts-inline .silence-row{
+  flex: 0 0 100%;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  order: 49; /* appear before theme-right (50) */
+}
+.opts-inline .silence-pair{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Keep number box visible on small screens */
+@media (max-width: 700px){
+  .opts-inline .silence-pair input#silenceSubAbove{
+    width: 7ch;
+    min-width: 64px;
+    max-width: 100px;
+  }
+}
+</style>
+
+
+<style id="yellow-theme-volume-warning">
+.theme-yellow #allowFullVolumeLabel {
+  color: black !important;
+  font-weight: bold;
+}
+</style>
+
+
+<style id="yellow-theme-volume-warning-strong">
+.theme-yellow label#allowFullVolumeLabel,
+.theme-yellow #allowFullVolumeLabel,
+.theme-yellow #allowFullVolumeLabel span,
+.theme-yellow #allowFullVolumeLabel input {
+  color: black !important;
+  font-weight: bold !important;
+}
+</style>
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
@@ -1864,9 +1909,22 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <button class="btn ghost" id="reset">Reset Defaults</button>
 <button aria-pressed="false" class="btn acc" id="startStopBtn">Start</button>
 </div><div class="keyLegend"><div><u>Keyboard shortcuts</u></div><ul style="list-style:none; margin:8px 0 0 0; padding:0;"><li style="margin:4px 0;; list-style:none"><code>Space</code> = Start / Stop</li><li style="margin:4px 0;; list-style:none"><code>←</code> / <code>→</code> = Prev / Next Cycle</li><li style="margin:4px 0;; list-style:none"><code>↑</code> / <code>↓</code> = Prev / Next Step</li></ul></div></div>
-<div class="opts-inline" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+<div class="opts-inline" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><div class="silence-row"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-grid; grid-template-columns:auto 1fr; align-items:center; gap:6px;">
+  <input id="silenceSubToggle" type="checkbox" aria-controls="silenceSubAbove" aria-label="Enable silencing subdivisions above BPM"/>
+  <span>Silence subdivisions above</span>
+</label><div class="silence-pair"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px;">
+  <input id="silenceSubAbove" type="number" min="1" step="1" style="max-width:100px;" aria-label="BPM threshold for silencing subdivisions" disabled />
+  
+</label><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px;">
+  <input id="silenceSubLinkMid" type="checkbox" aria-label="Keep threshold linked to midpoint" checked />
+  <span>Link to midpoint</span>
+</label></div></div>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="allowFullVolume" type="checkbox"/><span class="voltext">Allow full volume (louder clicks)</span><span class="volwarn">USE WITH CAUTION - NO HEADPHONES!</span></label>
+
+
+
+
 <label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px"><span>Theme:</span> <select id="theme">
 <option value="dark">Dark</option><option value="light">Light</option><option value="blue">Blue</option><option value="yellow">Yellow</option><option value="green">Green</option><option value="red">Red</option>
 </select><input id="themeToggle" type="checkbox" style="display:none" /></label>
@@ -2519,7 +2577,7 @@ if(isMain){
       if(delay>0) setTimeout(()=>playBuf(mainBuf), delay); else playBuf(mainBuf);
     } else {
       const delay = Math.max(0, alignMs - onsetSubMs);
-      if(delay>0) setTimeout(()=>playBuf(subBuf), delay); else playBuf(subBuf);
+      if(delay>0) setTimeout(()=>{ if(!window.__silenceSubShouldMute || !window.__silenceSubShouldMute(r.tempo)) if(!window.__silenceSubShouldMute || !window.__silenceSubShouldMute(r.tempo)) playBuf(subBuf); }, delay); else if(!window.__silenceSubShouldMute || !window.__silenceSubShouldMute(r.tempo)) playBuf(subBuf);
     }
   }, interval);
 }
@@ -3060,6 +3118,13 @@ function restoreResumeOnLoad(){
 
 <script id="theme-right-fallback-js">
 document.addEventListener('DOMContentLoaded', function(){
+    var link = byId('silenceSubLinkMid');
+    if(link){
+      link.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(); }, {passive:true});
+      // default: linked
+      link.checked = true;
+      setLinkedUI();
+    }
   try{
     var theme = document.getElementById('theme');
     if(!theme) return;
@@ -3101,6 +3166,192 @@ document.addEventListener('DOMContentLoaded', function(){
     clearTimeout(window.__tagCardsTimer);
     window.__tagCardsTimer = setTimeout(tagCards, 200);
   }, { passive: true });
+})();
+</script>
+
+
+<script id="silence-sub-js">
+(function(){
+  function byId(id){ return document.getElementById(id); }
+
+  function midpointBpm(){
+    const s = +((byId('start')&&byId('start').value)||0);
+    const t = +((byId('target')&&byId('target').value)||0);
+    if(!isFinite(s) || !isFinite(t)) return '';
+    return Math.round((s + t) / 2);
+  }
+
+  function updateSilenceInputDefault(){
+    var box = byId('silenceSubAbove');
+    if(!box) return;
+    var val = parseInt(box.value, 10);
+    if(!isFinite(val) || val <= 0){
+      var mid = midpointBpm();
+      if(mid){ box.value = String(mid); }
+
+  function isLinked(){ var l=byId('silenceSubLinkMid'); return !!(l && l.checked); }
+  function setLinkedUI(){
+    var box = byId('silenceSubAbove'), link = byId('silenceSubLinkMid');
+    if(!box) return;
+    if(link){ box.readOnly = !!link.checked; box.style.opacity = link.checked ? '0.8' : ''; }
+  }
+    }
+  }
+
+  function onToggleSilence(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    if(!toggle || !box) return;
+    box.disabled = !toggle.checked;
+    box.setAttribute('aria-disabled', box.disabled ? 'true':'false');
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    if(toggle && box){
+      toggle.checked = false;
+      onToggleSilence();
+      toggle.addEventListener('change', onToggleSilence, {passive:true});
+    }
+    var s = byId('start'), t = byId('target'), g = byId('gen');
+    if(s) s.addEventListener('change', updateSilenceInputDefault, {passive:true});
+    if(t) t.addEventListener('change', updateSilenceInputDefault, {passive:true});
+    if(g) g.addEventListener('click', function(){ 
+      setTimeout(function(){ setLinkedUI(); updateSilenceInputDefault(); }, 0); 
+    }, {passive:true});
+    setTimeout(updateSilenceInputDefault, 0);
+  });
+
+  window.__silenceSubShouldMute = function(bpm){
+    const toggle = byId('silenceSubToggle');
+    const box = byId('silenceSubAbove');
+    if(!toggle || !box) return false;
+    if(!toggle.checked) return false;
+    const thr = parseInt(box.value,10);
+    if(!isFinite(thr) || thr <= 0) return false;
+    return bpm >= thr;
+  };
+})();
+</script>
+
+
+<script id="silence-sub-persist-js">
+(function(){
+  function byId(id){ return document.getElementById(id); }
+  var LS_KEY = "icu_silence_sub_settings_v1";
+
+  function midpointBpm(){
+    const s = +((byId('start')&&byId('start').value)||0);
+    const t = +((byId('target')&&byId('target').value)||0);
+    if(!isFinite(s) || !isFinite(t)) return '';
+    return Math.round((s + t) / 2);
+  }
+
+  function isLinked(){ var l=byId('silenceSubLinkMid'); return !!(l && l.checked); }
+  function setLinkedUI(){
+    var box = byId('silenceSubAbove'), link = byId('silenceSubLinkMid');
+    if(!box) return;
+    if(link){ box.readOnly = !!link.checked; box.style.opacity = link.checked ? '0.8' : ''; }
+  }
+
+  function updateSilenceInputDefault(forceMidIfLinked){
+    var box = byId('silenceSubAbove');
+    if(!box) return;
+    var useMid = !!forceMidIfLinked || isLinked();
+    var val = parseInt(box.value, 10);
+    if(!isFinite(val) || val <= 0 || useMid){
+      var mid = midpointBpm();
+      if(mid){ box.value = String(mid); }
+    }
+  }
+
+  function onToggleSilence(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    if(!toggle || !box) return;
+    box.disabled = !toggle.checked;
+    box.setAttribute('aria-disabled', box.disabled ? 'true':'false');
+  }
+
+  function savePersist(){
+    try{
+      var data = {
+        on: !!(byId('silenceSubToggle') && byId('silenceSubToggle').checked),
+        bpm: (byId('silenceSubAbove') && byId('silenceSubAbove').value) || "",
+        link: !!(byId('silenceSubLinkMid') && byId('silenceSubLinkMid').checked)
+      };
+      localStorage.setItem(LS_KEY, JSON.stringify(data));
+    }catch(_){}
+  }
+
+  function loadPersist(){
+    try{
+      var raw = localStorage.getItem(LS_KEY);
+      if(!raw) return;
+      var data = JSON.parse(raw||"{}");
+      if(byId('silenceSubToggle')) byId('silenceSubToggle').checked = !!data.on;
+      if(byId('silenceSubLinkMid')) byId('silenceSubLinkMid').checked = (data.link !== false); // default true
+      if(byId('silenceSubAbove') && data.bpm) byId('silenceSubAbove').value = data.bpm;
+    }catch(_){}
+  }
+
+  function wireEvents(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    var link = byId('silenceSubLinkMid');
+    var s = byId('start'), t = byId('target'), g = byId('gen');
+
+    if(toggle){
+      toggle.addEventListener('change', function(){ onToggleSilence(); savePersist(); }, {passive:true});
+    }
+    if(box){
+      box.addEventListener('input', savePersist, {passive:true});
+      box.addEventListener('change', savePersist, {passive:true});
+    }
+    if(link){
+      link.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, {passive:true});
+    }
+    if(s){
+      s.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, {passive:true});
+      s.addEventListener('input', function(){ if(isLinked()) updateSilenceInputDefault(true); }, {passive:true});
+    }
+    if(t){
+      t.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, {passive:true});
+      t.addEventListener('input', function(){ if(isLinked()) updateSilenceInputDefault(true); }, {passive:true});
+    }
+    if(g){
+      g.addEventListener('click', function(){
+        // After generate() runs, update to the new midpoint when linked
+        setTimeout(function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, 0);
+      }, {passive:true});
+    }
+  }
+
+  // Monkey-patch generate() to refresh threshold post-regeneration as a fallback
+  // (in case Generate is triggered programmatically elsewhere)
+  try{
+    if(window.generate && !window.__patchedSilenceSubGenerate){
+      var _origGen = window.generate;
+      window.generate = function(){
+        var r = _origGen.apply(this, arguments);
+        try{
+          setTimeout(function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, 0);
+        }catch(_){}
+        return r;
+      };
+      window.__patchedSilenceSubGenerate = true;
+    }
+  }catch(_){}
+
+  document.addEventListener('DOMContentLoaded', function(){
+    loadPersist();              // restore saved state
+    onToggleSilence();          // enforce disabled state on load
+    setLinkedUI();              // reflect link state
+    updateSilenceInputDefault(true); // set to midpoint if linked or empty
+    wireEvents();               // attach listeners
+    savePersist();              // persist any defaults
+  });
 })();
 </script>
 
