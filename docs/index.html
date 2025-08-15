@@ -1793,6 +1793,25 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 }
 </style>
 
+
+<style id="blue-edge-bg-fix">
+/* Blue theme: make the outer page (above/below panels) exactly match the header area */
+:root[data-theme='blue'] html,
+:root[data-theme='blue'] body{
+  background: var(--bg) !important;
+  background-color: var(--bg) !important;
+  background-image: none !important;
+}
+/* Ensure the page always fills the viewport so the bottom doesn't show a lighter UA bg */
+:root[data-theme='blue'] body{
+  min-height: 100vh;
+}
+/* Keep the content wrapper transparent so the page bg shows through uniformly */
+:root[data-theme='blue'] .wrap{
+  background: transparent !important;
+}
+</style>
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
