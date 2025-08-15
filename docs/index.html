@@ -2271,7 +2271,14 @@ let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDe
 let currentIndexInCycle = 0;
 
 // Generator (confirmed standard rules)
-function generate(opts={preserveCycle:false}){
+\1
+
+  // ICU: auto-enable preserveCycle on first load if a saved cycle exists
+  if (!opts) opts = {};
+  if (opts.preserveCycle === undefined) {
+    opts.preserveCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1);
+  }
+
 
   if(isStarted){ handoffPending = true; }
 // Capture previous context for preserving cycle/step
