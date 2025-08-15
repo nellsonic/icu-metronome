@@ -2,6 +2,50 @@
 
 <html lang="en">
 <head>
+
+<!-- ICU desired-cycle bootstrap (final) -->
+<script>
+(function(){
+  function getCookie(name){
+    try{
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }catch(_){ return null; }
+  }
+  function desiredCycle(){
+    try{
+      if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
+        const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
+        if (s && s.resumeCycle != null){
+          const c = parseInt(s.resumeCycle,10);
+          if (c >= 1) return c;
+        }
+      }
+    }catch(_){}
+    try{
+      const v = localStorage.getItem('icu.lastCycle');
+      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+    }catch(_){}
+    try{
+      const raw = localStorage.getItem('icu.lastPos');
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
+      }
+    }catch(_){}
+    try{
+      const raw = getCookie('icu_resume_v3');
+      if (raw){
+        const j = JSON.parse(raw);
+        if (Number.isInteger(j?.cycle) && j.cycle >= 1) return j.cycle;
+      }
+    }catch(_){}
+    return null;
+  }
+  window.__icuDesiredCycle = desiredCycle();
+})();
+</script>
+
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Interleaved Clicking Up Metronome</title>
@@ -2223,7 +2267,7 @@ function buildAcrossSeq(N){
 // State
 let allRows = [];
 let cycleMap = new Map();
-let currentCycle = 1;
+let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1);
 let currentIndexInCycle = 0;
 
 // Generator (confirmed standard rules)
@@ -2377,7 +2421,8 @@ function generate(opts={preserveCycle:false}){
     }
   }
 } else {
-  currentCycle = 1;
+  const maxC = +byId('cycles').value || 1;
+  currentCycle = Math.max(1, Math.min(maxC, (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1)));
   currentIndexInCycle = 0;
 }
 
@@ -2742,26 +2787,29 @@ function restoreResumeOnLoad(){
   try{
     const key = STORE_KEY;
     const s = JSON.parse(localStorage.getItem(key)||"{}");
-    let cSaved = +s.resumeCycle || 1;
-    let iSaved = +s.resumeIndex || 0;
-    const maxC0 = +byId('cycles').value || 1;
-    if (!(cSaved >= 1)) cSaved = 1;
-    if (cSaved > maxC0) cSaved = maxC0;
-    currentCycle = cSaved;
+    const cSaved = +s.resumeCycle || 1;
+    // ICU: set currentCycle early so preserveCycle uses it
+    try { if (Number.isInteger(cSaved) && cSaved >= 1) { currentCycle = cSaved; } } catch(_) {}
+    const iSaved = +s.resumeIndex || 0;
+
+    // If no plan yet, build one first (preserve cycle/step); suppress scroll to avoid jumps
     const idxs0 = (cycleMap && cycleMap.get && cycleMap.get(cSaved)) || [];
     if (!Array.isArray(idxs0) || idxs0.length === 0){
       try{ generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); }catch(_){
         try{ generate(); }catch(_2){}
       }
     }
+
     const maxC = +byId('cycles').value || 1;
-    if (cSaved > maxC) cSaved = maxC;
-    if (!(iSaved >= 0)) iSaved = 0;
-    currentCycle = cSaved;
-    if (typeof renderCycle === 'function') renderCycle();
-    const idxs = (cycleMap && cycleMap.get && cycleMap.get(currentCycle)) || [];
-    if (Array.isArray(idxs) && idxs.length && iSaved >= idxs.length) iSaved = Math.max(0, idxs.length-1);
-    if (typeof setCurrentIndexInCycle === 'function') setCurrentIndexInCycle(iSaved);
+    let c = cSaved;
+    if (c < 1) c = 1; if (c > maxC) c = maxC;
+
+    currentCycle = c;
+    renderCycle();
+    const idxs = cycleMap.get(currentCycle) || [];
+    let i = iSaved;
+    if (i < 0) i = 0; if (i >= idxs.length) i = Math.max(0, idxs.length-1);
+    setCurrentIndexInCycle(i);
   }catch(_){/*noop*/}
 }
 
