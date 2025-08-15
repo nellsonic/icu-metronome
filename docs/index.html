@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 
-<!-- ICU desired-cycle bootstrap (final) -->
+<!-- ICU: robust saved-cycle bootstrap -->
 <script>
 (function(){
   function getCookie(name){
@@ -43,6 +43,30 @@
     return null;
   }
   window.__icuDesiredCycle = desiredCycle();
+
+  // Expose persister
+  window.__icuPersistCycle = function(c){
+    try{
+      if (!(c >= 1)) return;
+      localStorage.setItem('icu.lastCycle', String(c));
+      try{
+        const raw = localStorage.getItem('icu.lastPos');
+        let pos = {cycle:c, step:null};
+        if (raw){ try{ const o = JSON.parse(raw); pos.step = o.step ?? null; }catch(_){ } }
+        localStorage.setItem('icu.lastPos', JSON.stringify(pos));
+      }catch(_){}
+      try{
+        if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
+          const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
+          s.resumeCycle = c;
+          localStorage.setItem(window.STORE_KEY, JSON.stringify(s));
+        }
+      }catch(_){}
+      try{
+        document.cookie = 'icu_resume_v3=' + encodeURIComponent(JSON.stringify({cycle:c})) + '; path=/; max-age='+(365*86400);
+      }catch(_){}
+    }catch(_){}
+  };
 })();
 </script>
 
@@ -2271,12 +2295,18 @@ let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDe
 let currentIndexInCycle = 0;
 
 // Generator (confirmed standard rules)
-function generate(opts={preserveCycle:false}){
+function generate(opts){
+  // ICU: default preserveCycle to true on first load if we have a saved cycle
+  if (!opts) opts = {};
+  if (opts.preserveCycle === undefined) { opts.preserveCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1); }
+
 
   if(isStarted){ handoffPending = true; }
 // Capture previous context for preserving cycle/step
   let _prevCycle = currentCycle;
-  let _prevTempo = null;
+  
+  if (opts && opts.preserveCycle && Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1) { _prevCycle = window.__icuDesiredCycle; }
+let _prevTempo = null;
   let _prevSegs = null;
   if (opts && (opts.preserveCycle || opts.preserveStep) && Array.isArray(allRows) && allRows.length){
     const _idxsPrev = (cycleMap && cycleMap.get && cycleMap.get(currentCycle)) || [];
@@ -2788,7 +2818,7 @@ function restoreResumeOnLoad(){
     const key = STORE_KEY;
     const s = JSON.parse(localStorage.getItem(key)||"{}");
     const cSaved = +s.resumeCycle || 1;
-    // ICU: set currentCycle early so preserveCycle uses it
+    // ICU: ensure preserveCycle honors saved cycle on iOS
     try { if (Number.isInteger(cSaved) && cSaved >= 1) { currentCycle = cSaved; } } catch(_) {}
     const iSaved = +s.resumeIndex || 0;
 
@@ -3413,6 +3443,46 @@ document.addEventListener('DOMContentLoaded', function(){
     updateSilenceInputDefault(true); // set to midpoint if linked or empty
     wireEvents();               // attach listeners
     savePersist();              // persist any defaults
+  });
+})();
+</script>
+
+
+<!-- ICU: persist cycle after each render -->
+<script>
+(function(){
+  function wrapRender(){
+    const fn = window.renderCycle;
+    if (typeof fn !== 'function' || fn.__icuIcuWrapped) return;
+    const w = function(...args){
+      const out = fn.apply(this, args);
+      try{
+        if (typeof window.currentCycle === 'number' && window.currentCycle >= 1 && typeof window.__icuPersistCycle === 'function'){
+          window.__icuPersistCycle(window.currentCycle);
+        }
+      }catch(_){}
+      return out;
+    };
+    w.__icuIcuWrapped = true;
+    window.renderCycle = w;
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive'){
+    wrapRender();
+  } else {
+    window.addEventListener('DOMContentLoaded', wrapRender, {once:true});
+  }
+  window.addEventListener('pageshow', function(){
+    // Re-run restore on iOS bfcache
+    try{ if (typeof restoreResumeOnLoad === 'function') restoreResumeOnLoad(); }catch(_){}
+    wrapRender();
+  });
+  window.addEventListener('pagehide', function(){
+    try{ if (typeof window.__icuPersistCycle === 'function') window.__icuPersistCycle(window.currentCycle); }catch(_){}
+  });
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden'){
+      try{ if (typeof window.__icuPersistCycle === 'function') window.__icuPersistCycle(window.currentCycle); }catch(_){}
+    }
   });
 })();
 </script>
