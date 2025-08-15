@@ -3371,13 +3371,13 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
-<!-- iPad/Safari cycle restore v2: MutationObserver + multi-selector + re-assert -->
+<!-- iPad/Safari cycle restore v3: polite, debounced, user-aware -->
 <script>
 (function(){
   const LS_POS_KEY = 'icu.lastPos';
   const LS_CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
-  const MAX_WAIT_MS = 5000;
 
+  // --- helpers ---
   function getSavedCycle(){
     try{
       const raw = localStorage.getItem(LS_POS_KEY);
@@ -3392,11 +3392,9 @@ document.addEventListener('DOMContentLoaded', function(){
     }catch(e){}
     return null;
   }
-
   function saveCycle(cycle){
     if (!Number.isInteger(cycle) || cycle < 1) return;
     try{
-      // Preserve existing step if present
       let pos = {cycle, step:null};
       const raw = localStorage.getItem(LS_POS_KEY);
       if (raw){ try{ const old = JSON.parse(raw); pos.step = old.step ?? null; }catch(e){} }
@@ -3404,140 +3402,169 @@ document.addEventListener('DOMContentLoaded', function(){
       localStorage.setItem('icu.lastCycle', String(cycle));
     }catch(e){}
   }
-
   function qsaCycles(){
-    const roots = document.querySelectorAll('.cyclebar');
-    if (!roots.length) return [];
-    // Try common child patterns
-    const sels = [
-      '.seg', '.dot', '[data-cycle]', 'button', 'div', 'span'
-    ];
-    for (const root of roots){
-      for (const s of sels){
-        const els = root.querySelectorAll(s);
-        // Heuristic: 2+ items and at least one has text or aria-label or data-cycle
-        if (els.length >= 2){
-          return Array.from(els);
-        }
-      }
-    }
-    return [];
+    const root = document.querySelector('.cyclebar');
+    if (!root) return [];
+    // Known class for cycle dots/segments in this build:
+    const els = root.querySelectorAll('.seg, .dot, [data-cycle], button');
+    return Array.from(els);
   }
-
   function currentCycleIndex(segs){
-    // zero-based
     let idx = segs.findIndex(el => el.classList && el.classList.contains('current'));
     if (idx >= 0) return idx;
-    // Fallback: look for aria-pressed or aria-current
     idx = segs.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-current') === 'true'));
     if (idx >= 0) return idx;
-    // Fallback: look for data-current
     idx = segs.findIndex(el => el.getAttribute && (el.getAttribute('data-current') === 'true'));
     return idx;
   }
-
-  function switchToCycle(cycleNumber){
+  function gotoCycle(cycleNumber){
     const segs = qsaCycles();
     if (!segs.length) return false;
     const targetIdx = Math.min(Math.max(cycleNumber-1,0), segs.length-1);
     const curIdx = currentCycleIndex(segs);
-    if (curIdx === targetIdx){
-      return true;
-    }
+    if (curIdx === targetIdx) return true;
     const el = segs[targetIdx];
     if (!el) return false;
-
-    // Prefer a click; also try dispatching events that frameworks listen for
     try{ el.click(); }catch(e){}
     try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }catch(e){}
-    try{ el.dispatchEvent(new Event('change', {bubbles:true})); }catch(e){}
     try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle: cycleNumber}})); }catch(e){}
-
-    // Give UI a moment to react; we will verify later
     return true;
   }
 
-  // Observe cyclebar to detect when it appears/changes; also save on change
-  let lastObservedIdx = -1;
-  const cycleObserver = new MutationObserver(() => {
+  // --- polite, debounced restore ---
+  let restoreTimer = null;
+  let restoreTries = 0;
+  let stableCount = 0;
+  let userCooldownTimer = null;
+  let inUserCooldown = false;
+  const MAX_TRIES = 18;     // ~2 seconds at 110ms
+  const INTERVAL  = 110;
+  const STABLE_NEED = 3;    // need to see target hold steady for 3 checks
+
+  function startUserCooldown(ms=900){
+    inUserCooldown = true;
+    clearTimeout(userCooldownTimer);
+    userCooldownTimer = setTimeout(()=>{ inUserCooldown = false; }, ms);
+  }
+
+  function scheduleRestore(cycle){
+    if (!Number.isInteger(cycle) || cycle < 1) return;
+    clearTimeout(restoreTimer);
+    restoreTries = 0;
+    stableCount = 0;
+    // attempt immediately, then debounce
+    attemptRestore(cycle);
+  }
+  function attemptRestore(cycle){
+    if (inUserCooldown){
+      // back off while user is navigating
+      restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
+      return;
+    }
+    const segs = qsaCycles();
+    if (!segs.length){
+      restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
+      return;
+    }
+    const targetIdx = Math.min(Math.max(cycle-1,0), segs.length-1);
+    const curIdx = currentCycleIndex(segs);
+
+    if (curIdx === targetIdx){
+      stableCount++;
+      if (stableCount >= STABLE_NEED){
+        clearTimeout(restoreTimer);
+        return; // success & stable
+      }
+      restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
+      return;
+    }else{
+      stableCount = 0;
+      gotoCycle(cycle);
+    }
+
+    restoreTries++;
+    if (restoreTries >= MAX_TRIES){
+      clearTimeout(restoreTimer);
+      return; // give up politely
+    }
+    restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
+  }
+
+  // --- listen for user navigation to create cooldown ---
+  function bindUserInputs(){
+    // Known IDs (if present)
+    ['prevCycleBtn','nextCycleBtn','prevStepBtn','nextStepBtn','startStopBtn']
+      .forEach(id => {
+        const el = document.getElementById(id);
+        if (el){
+          el.addEventListener('click', ()=>startUserCooldown(), true);
+          el.addEventListener('pointerdown', ()=>startUserCooldown(), true);
+        }
+      });
+    // Any button inside the cyclebar
+    const bar = document.querySelector('.cyclebar');
+    if (bar){
+      bar.addEventListener('click', (e)=>{ if (e.target.closest('button, .seg, .dot')) startUserCooldown(); }, true);
+      bar.addEventListener('pointerdown', (e)=>{ if (e.target.closest('button, .seg, .dot')) startUserCooldown(); }, true);
+    }
+    // Arrow keys
+    window.addEventListener('keydown', (e)=>{
+      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) startUserCooldown();
+    }, true);
+  }
+
+  // --- observe current cycle change to save once per change (edge-triggered) ---
+  let lastSavedIdx = -1;
+  const cycleObserver = new MutationObserver(()=>{
     const segs = qsaCycles();
     if (!segs.length) return;
     const idx = currentCycleIndex(segs);
-    if (idx !== -1 && idx !== lastObservedIdx){
-      lastObservedIdx = idx;
+    if (idx !== -1 && idx !== lastSavedIdx){
+      lastSavedIdx = idx;
       saveCycle(idx + 1);
     }
   });
-
   function observeCyclebar(){
     const bar = document.querySelector('.cyclebar') || document.body;
     cycleObserver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
   }
 
-  // Re-assert desired cycle several times over a window to beat late renders
-  function reassertCycle(cycleNum){
-    const start = performance.now();
-    (function tick(){
-      switchToCycle(cycleNum);
-      if (performance.now() - start < MAX_WAIT_MS){
-        setTimeout(tick, 120);
-      }
-    })();
-  }
-
-  // Try restore when table rows populate (after Generate)
-  const tableObserver = new MutationObserver(()=>{
-    const cycle = getSavedCycle();
-    if (Number.isInteger(cycle) && cycle > 0){
-      reassertCycle(cycle);
-    }
-  });
-  function observeTable(){
-    const tb = document.querySelector('#tbl tbody') || document.querySelector('#tbl') || document.body;
-    tableObserver.observe(tb, {subtree:true, childList:true});
-  }
-
+  // --- hook lifecycle ---
   function kickoff(){
+    bindUserInputs();
     observeCyclebar();
-    observeTable();
-    const cycle = getSavedCycle();
-    if (Number.isInteger(cycle) && cycle > 0){
-      reassertCycle(cycle);
+    // after DOM ready or pageshow, try a short, polite restore
+    const want = getSavedCycle();
+    if (Number.isInteger(want) && want > 0){
+      scheduleRestore(want);
     }
   }
 
-  // iOS-friendly lifecycle hooks
-  window.addEventListener('pageshow', kickoff, {once:false});
+  // Run on initial load and on iOS bfcache restore
   if (document.readyState === 'complete' || document.readyState === 'interactive'){
     kickoff();
   }else{
     window.addEventListener('DOMContentLoaded', kickoff, {once:true});
   }
+  window.addEventListener('pageshow', kickoff);
 
-  // Save on user taps to cycle dots
-  document.addEventListener('click', function(e){
-    const el = e.target.closest('.cyclebar *');
-    if (!el) return;
-    const segs = qsaCycles();
-    const idx = segs.indexOf(el);
-    if (idx >= 0){
-      saveCycle(idx + 1);
-    }
-  }, true);
-
-  // Also save when leaving the page
-  window.addEventListener('pagehide', ()=>{
-    const segs = qsaCycles();
-    const idx = currentCycleIndex(segs);
-    if (idx >= 0) saveCycle(idx + 1);
-  });
-  document.addEventListener('visibilitychange', ()=>{
-    if (document.visibilityState === 'hidden'){
-      const segs = qsaCycles();
-      const idx = currentCycleIndex(segs);
-      if (idx >= 0) saveCycle(idx + 1);
+  // After table renders (Generate), try one short restore again
+  const tableObserver = new MutationObserver(()=>{
+    const want = getSavedCycle();
+    if (Number.isInteger(want) && want > 0){
+      scheduleRestore(want);
     }
   });
+  (function observeTable(){
+    const tb = document.querySelector('#tbl tbody') || document.querySelector('#tbl');
+    if (tb){
+      tableObserver.observe(tb, {childList:true, subtree:true});
+    }else{
+      // retry later if table not present yet
+      setTimeout(observeTable, 200);
+    }
+  })();
+
 })();
 </script>
 
