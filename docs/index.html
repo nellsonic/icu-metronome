@@ -1777,6 +1777,22 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 }
 </style>
 
+
+<style id="blue-failsafe-uniform-bg">
+/* Blue theme fail-safe: make every card body and its scroll area use the same background
+   so the bottom matches the top on iPad/Safari (no :has, no JS dependencies). */
+:root[data-theme='blue'] .card .bd,
+:root[data-theme='blue'] .card .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+/* Ensure the table itself also inherits the uniform bg */
+:root[data-theme='blue'] #tbl,
+:root[data-theme='blue'] #tbl th,
+:root[data-theme='blue'] #tbl td{
+  background: var(--bg) !important;
+}
+</style>
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
