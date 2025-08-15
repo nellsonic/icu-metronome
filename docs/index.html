@@ -2742,26 +2742,55 @@ function restoreResumeOnLoad(){
   try{
     const key = STORE_KEY;
     const s = JSON.parse(localStorage.getItem(key)||"{}");
-    const cSaved = +s.resumeCycle || 1;
-    const iSaved = +s.resumeIndex || 0;
+    let cSaved = (s && s.resumeCycle != null) ? +s.resumeCycle : NaN;
+    let iSaved = (s && s.resumeIndex != null) ? +s.resumeIndex : NaN;
+    const tSaved = (s && s.resumeTempo != null) ? +s.resumeTempo : null;
+    const segSaved = (s && s.resumeSegs != null) ? s.resumeSegs : null;
 
-    // If no plan yet, build one first (preserve cycle/step); suppress scroll to avoid jumps
-    const idxs0 = (cycleMap && cycleMap.get && cycleMap.get(cSaved)) || [];
+    // 1) Ensure plan exists first (so allRows/cycleMap are populated)
+    const needC = Number.isFinite(cSaved) && cSaved >= 1 ? cSaved : 1;
+    const idxs0 = (cycleMap && cycleMap.get && cycleMap.get(needC)) || [];
     if (!Array.isArray(idxs0) || idxs0.length === 0){
       try{ generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); }catch(_){
         try{ generate(); }catch(_2){}
       }
     }
 
-    const maxC = +byId('cycles').value || 1;
-    let c = cSaved;
-    if (c < 1) c = 1; if (c > maxC) c = maxC;
+    // 2) If cycle missing/invalid, derive from saved tempo/segments
+    if (!(Number.isFinite(cSaved) && cSaved >= 1)){
+      let bestGi = -1, bestD = Infinity, bestSeg = -1;
+      if (Array.isArray(allRows) && allRows.length){
+        for (let gi=0; gi<allRows.length; gi++){
+          const r = allRows[gi];
+          const rrTempo = (+r.tempo || 0);
+          const d = (tSaved == null) ? Infinity : Math.abs(rrTempo - tSaved);
+          const segMatch = (segSaved && r.segments === segSaved) ? 1 : 0;
+          if (d < bestD || (d === bestD && segMatch > bestSeg)){
+            bestD = d; bestSeg = segMatch; bestGi = gi;
+          }
+        }
+      }
+      if (bestGi >= 0){
+        cSaved = allRows[bestGi].cycle || 1;
+        // compute index within that cycle
+        const idxs = (cycleMap && cycleMap.get && cycleMap.get(cSaved)) || [];
+        const pos = Array.isArray(idxs) ? idxs.indexOf(bestGi) : -1;
+        if (pos >= 0){ iSaved = pos; }
+      }else{
+        cSaved = 1; iSaved = 0;
+      }
+    }
 
+    // 3) Clamp & apply
+    const maxC = +byId('cycles').value || 1;
+    let c = cSaved; if (!Number.isFinite(c) || c < 1) c = 1; if (c > maxC) c = maxC;
     currentCycle = c;
     renderCycle();
-    const idxs = cycleMap.get(currentCycle) || [];
-    let i = iSaved;
-    if (i < 0) i = 0; if (i >= idxs.length) i = Math.max(0, idxs.length-1);
+
+    const idxs = (cycleMap && cycleMap.get && cycleMap.get(currentCycle)) || [];
+    let i = Number.isFinite(iSaved) ? iSaved : 0;
+    if (i < 0) i = 0;
+    if (Array.isArray(idxs) && idxs.length && i >= idxs.length) i = Math.max(0, idxs.length - 1);
     setCurrentIndexInCycle(i);
   }catch(_){/*noop*/}
 }
@@ -3370,165 +3399,7 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
-
-<!-- iPad/Safari cycle fix v8: wrap generate, prefer internal setters, save reliably -->
-<script>
-(function(){
-  const POS_KEY = 'icu.lastPos';
-  const CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
-  const RESUME_COOKIE = 'icu_resume_v3';
-
-  function readCookie(name){
-    try{
-      const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
-      return m ? decodeURIComponent(m[1]) : null;
-    }catch(_){ return null; }
-  }
-  function writeCookie(name, value, days){
-    try{
-      const max = days ? `; max-age=${Math.floor(days*86400)}` : '';
-      document.cookie = `${name}=${encodeURIComponent(value)}; path=/${max}`;
-    }catch(_){}
-  }
-
-  function readSavedCycle(){
-    // 1) explicit cycle keys
-    for(const k of CYCLE_KEYS){
-      const v = localStorage.getItem(k);
-      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-    }
-    // 2) lastPos.cycle
-    try{
-      const raw = localStorage.getItem(POS_KEY);
-      if (raw){
-        const obj = JSON.parse(raw);
-        if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
-      }
-    }catch(_){}
-    // 3) cookie
-    try{
-      const raw = readCookie(RESUME_COOKIE);
-      if (raw){
-        const j = JSON.parse(raw);
-        if (Number.isInteger(j?.cycle) && j.cycle >= 1) return j.cycle;
-      }
-    }catch(_){}
-    return null;
-  }
-
-  function writeSavedCycle(c){
-    if (!(c >= 1)) return;
-    try{
-      localStorage.setItem('icu.lastCycle', String(c));
-      const raw = localStorage.getItem(POS_KEY);
-      let pos = {cycle:c, step:null};
-      if (raw){ try{ const o = JSON.parse(raw); pos.step = o.step ?? null; }catch(_){ } }
-      localStorage.setItem(POS_KEY, JSON.stringify(pos));
-      const idx = (typeof window.currentIndexInCycle === 'number') ? window.currentIndexInCycle : 0;
-      writeCookie(RESUME_COOKIE, JSON.stringify({cycle:c, index:idx}), 365);
-    }catch(_){}
-  }
-
-  function applyCycle(c){
-    if (!(c >= 1)) return false;
-    // Prefer internal functions if present
-    if (typeof window.setCurrentCycle === 'function'){ try{ window.setCurrentCycle(c); return true; }catch(_){ } }
-    if (typeof window.gotoCycle === 'function'){ try{ window.gotoCycle(c); return true; }catch(_){ } }
-    if (typeof window.renderCycle === 'function'){ try{ window.currentCycle = c; window.renderCycle(); return true; }catch(_){ } }
-    // Fallback: click appropriate cycle control
-    const segs = document.querySelectorAll('.cyclebar .seg, .cyclebar [data-cycle], .cyclebar button');
-    if (segs.length){
-      const idx = Math.min(Math.max(c-1,0), segs.length-1);
-      const el = segs[idx];
-      try{ el.click(); return true; }catch(_){}
-      try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); return true; }catch(_){}
-    }
-    return false;
-  }
-
-  // Observe cycle changes to persist once per change
-  let lastSaved = -1;
-  const cycleObserver = new MutationObserver(()=>{
-    const segs = document.querySelectorAll('.cyclebar .seg, .cyclebar [data-cycle], .cyclebar button');
-    if (!segs.length) return;
-    let idx = -1;
-    segs.forEach((el,i)=>{
-      if (el.classList.contains('current') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-pressed')==='true' || el.getAttribute('data-current')==='true'){
-        idx = i;
-      }
-    });
-    if (idx !== -1 && idx !== lastSaved){
-      lastSaved = idx;
-      writeSavedCycle(idx+1);
-    }
-  });
-  function startObservers(){
-    const bar = document.querySelector('.cyclebar') || document.body;
-    cycleObserver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-current','aria-pressed','data-current']});
-  }
-
-  // Wrap generate so restore happens strictly AFTER plan build
-  const origGen = window.generate;
-  if (typeof origGen === 'function'){
-    window.generate = function(...args){
-      const ret = origGen.apply(this, args);
-      // Restore after DOM settles
-      queueMicrotask(()=>{
-        requestAnimationFrame(()=>{
-          requestAnimationFrame(()=>{
-            const c = readSavedCycle();
-            if (c >= 1) applyCycle(c);
-          });
-        });
-      });
-      return ret;
-    };
-  } else {
-    // If generate isn't defined yet, patch it later
-    Object.defineProperty(window, 'generate', {
-      configurable: true,
-      set(fn){
-        Object.defineProperty(window, 'generate', {value: fn, writable: false});
-        // Wrap the now-defined generate
-        const orig = window.generate;
-        window.generate = function(...args){
-          const ret = orig.apply(this, args);
-          queueMicrotask(()=>{
-            requestAnimationFrame(()=>{
-              requestAnimationFrame(()=>{
-                const c = readSavedCycle();
-                if (c >= 1) applyCycle(c);
-              });
-            });
-          });
-          return ret;
-        };
-      }
-    });
-  }
-
-  function initialRestore(){
-    startObservers();
-    const c = readSavedCycle();
-    if (!(c >= 1)) return;
-    let tries = 0, max = 30;
-    (function tick(){
-      const ok = applyCycle(c);
-      if (!ok && tries < max){ tries++; setTimeout(tick, 70); }
-    })();
-  }
-
-  if (document.readyState === 'complete' || document.readyState === 'interactive'){
-    initialRestore();
-  }else{
-    window.addEventListener('DOMContentLoaded', initialRestore, {once:true});
-  }
-  window.addEventListener('pageshow', initialRestore);
-  window.addEventListener('pagehide', ()=>{
-    if (window.currentCycle >= 1) writeSavedCycle(window.currentCycle);
-  });
-})();
-</script>
-
 </body>
 </html>
+
+<script>try{ window.addEventListener('pageshow', ()=>{ try{ restoreResumeOnLoad(); }catch(_){} }); }catch(_){}<\/script>
