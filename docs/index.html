@@ -1857,6 +1857,21 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 }
 </style>
 
+
+<style id="yellow-volwarn-override">
+/* Force warning text to black in Yellow theme */
+:root[data-theme='yellow'] .volwarn{
+  color: #000 !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+/* Extra specificity in case inline-grid rules target volwarn inside labels */
+:root[data-theme='yellow'] label .volwarn{
+  color: #000 !important;
+  font-weight: 700 !important;
+}
+</style>
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
