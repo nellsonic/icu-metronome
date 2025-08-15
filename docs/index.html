@@ -3,43 +3,38 @@
 <html lang="en">
 <head>
 
-<!-- iPad/Safari cycle fix v10: guarded currentCycle + post-generate enforcement -->
+<!-- ICU desired-cycle bootstrap -->
 <script>
 (function(){
-  const POS_KEY = 'icu.lastPos';
-  const CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
-  const RESUME_COOKIE = 'icu_resume_v3';
-
-  function readCookie(name){
+  function icuReadCookie(name){
     try{
       const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
       return m ? decodeURIComponent(m[1]) : null;
     }catch(_){ return null; }
   }
-  function desiredCycle(){
+  function icuDesiredCycle(){
     try{
-      const key = (typeof window.STORE_KEY !== 'undefined') ? window.STORE_KEY : null;
-      if (key){
-        const s = JSON.parse(localStorage.getItem(key) || "{}");
+      if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
+        const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
         if (s && s.resumeCycle != null){
           const c = parseInt(s.resumeCycle,10);
           if (c >= 1) return c;
         }
       }
     }catch(_){}
-    for(const k of CYCLE_KEYS){
-      const v = localStorage.getItem(k);
-      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-    }
     try{
-      const raw = localStorage.getItem(POS_KEY);
+      const v = localStorage.getItem('icu.lastCycle');
+      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+    }catch(_){}
+    try{
+      const raw = localStorage.getItem('icu.lastPos');
       if (raw){
         const obj = JSON.parse(raw);
         if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
       }
     }catch(_){}
     try{
-      const raw = readCookie(RESUME_COOKIE);
+      const raw = icuReadCookie('icu_resume_v3');
       if (raw){
         const j = JSON.parse(raw);
         if (Number.isInteger(j?.cycle) && j.cycle >= 1) return j.cycle;
@@ -47,119 +42,7 @@
     }catch(_){}
     return null;
   }
-
-  function persistCycle(c){
-    if (!(c >= 1)) return;
-    try{
-      localStorage.setItem('icu.lastCycle', String(c));
-      const raw = localStorage.getItem(POS_KEY);
-      let pos = {cycle:c, step:null};
-      if (raw){ try{ const o = JSON.parse(raw); pos.step = o.step ?? null; }catch(_){ } }
-      localStorage.setItem(POS_KEY, JSON.stringify(pos));
-      const idx = (typeof window.currentIndexInCycle === 'number') ? window.currentIndexInCycle : 0;
-      document.cookie = 'icu_resume_v3=' + encodeURIComponent(JSON.stringify({cycle:c, index:idx})) + '; path=/; max-age=' + (365*86400);
-    }catch(_){}
-  }
-
-  // Guard: intercept the very first assignment to currentCycle (which is where apps often set 1)
-  (function installGuard(){
-    let armed = true;
-    let disarmTimer = null;
-    let backing = (typeof window.currentCycle === 'number') ? window.currentCycle : 1;
-    const want = desiredCycle();
-
-    function disarmSoon(){
-      clearTimeout(disarmTimer);
-      disarmTimer = setTimeout(()=>{ armed = false; }, 2500); // short window around init
-    }
-    disarmSoon();
-
-    try{
-      const desc = Object.getOwnPropertyDescriptor(window, 'currentCycle');
-      if (!desc || desc.configurable){ // avoid breaking non-configurable definitions
-        Object.defineProperty(window, 'currentCycle', {
-          configurable: true,
-          get(){ return backing; },
-          set(v){
-            // If app tries to set 1 initially but we have a desired cycle, override once
-            if (armed && Number.isInteger(want) && want >= 1 && (v === 1 || v === undefined || v === null)){
-              backing = want;
-              armed = false; // one-shot
-              try{ if (typeof window.renderCycle === 'function') window.renderCycle(); }catch(_){}
-              return;
-            }
-            // Normal path
-            backing = v;
-            // Persist user changes
-            persistCycle(v);
-          }
-        });
-      }
-    }catch(_){}
-
-    // Make sure we re-arm briefly on iOS bfcache restores
-    window.addEventListener('pageshow', function(){
-      armed = true;
-      disarmSoon();
-      const w = desiredCycle();
-      if (Number.isInteger(w) && w >= 1){
-        try{
-          // If app already rendered with 1, nudge once
-          if (typeof window.currentCycle === 'number' && window.currentCycle !== w){
-            window.currentCycle = w;
-            if (typeof window.renderCycle === 'function') window.renderCycle();
-          }
-        }catch(_){}
-      }
-    });
-  })();
-
-  // Post-generate enforcement (in case generate resets cycle after the guard ran)
-  (function wrapGenerate(){
-    function applyOnce(){
-      const w = desiredCycle();
-      if (!(w >= 1)) return;
-      try{
-        // Respect internal render path
-        if (typeof window.renderCycle === 'function'){
-          if (window.currentCycle !== w){
-            window.currentCycle = w;
-            window.renderCycle();
-          }
-        }
-      }catch(_){}
-    }
-    function wrap(fn){
-      return function(...args){
-        const out = fn.apply(this, args);
-        queueMicrotask(()=>{ requestAnimationFrame(()=>{ requestAnimationFrame(applyOnce); }); });
-        return out;
-      };
-    }
-    if (typeof window.generate === 'function'){
-      if (!window.generate.__icuWrapped){
-        window.generate = wrap(window.generate);
-        window.generate.__icuWrapped = true;
-      }
-    }else{
-      Object.defineProperty(window, 'generate', {
-        configurable: true,
-        set(fn){
-          const w = wrap(fn);
-          Object.defineProperty(window, 'generate', { value: w, writable: false });
-          window.generate.__icuWrapped = true;
-        }
-      });
-    }
-  })();
-
-  // Persist on user navigation
-  window.addEventListener('pagehide', function(){
-    if (typeof window.currentCycle === 'number') persistCycle(window.currentCycle);
-  });
-  document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'hidden' && typeof window.currentCycle === 'number') persistCycle(window.currentCycle);
-  });
+  window.__icuDesiredCycle = icuDesiredCycle();
 })();
 </script>
 
@@ -2384,7 +2267,7 @@ function buildAcrossSeq(N){
 // State
 let allRows = [];
 let cycleMap = new Map();
-let currentCycle = 1;
+let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1);
 let currentIndexInCycle = 0;
 
 // Generator (confirmed standard rules)
@@ -2538,7 +2421,7 @@ function generate(opts={preserveCycle:false}){
     }
   }
 } else {
-  currentCycle = 1;
+  currentCycle = Math.max(1, Math.min((+byId('cycles').value||1), (Number.isInteger(window.__icuDesiredCycle)&&window.__icuDesiredCycle>=1?window.__icuDesiredCycle:1)));
   currentIndexInCycle = 0;
 }
 
