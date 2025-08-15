@@ -3371,13 +3371,12 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
-<!-- iPad/Safari cycle restore v3: polite, debounced, user-aware -->
+<!-- iPad/Safari cycle restore v4: quiet settle + one-shot assert -->
 <script>
 (function(){
   const LS_POS_KEY = 'icu.lastPos';
-  const LS_CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
+  const LS_CYCLE_KEY = 'icu.lastCycle';
 
-  // --- helpers ---
   function getSavedCycle(){
     try{
       const raw = localStorage.getItem(LS_POS_KEY);
@@ -3385,10 +3384,8 @@ document.addEventListener('DOMContentLoaded', function(){
         const obj = JSON.parse(raw);
         if (Number.isInteger(obj.cycle) && obj.cycle >= 1) return obj.cycle;
       }
-      for (const k of LS_CYCLE_KEYS){
-        const v = localStorage.getItem(k);
-        if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-      }
+      const v = localStorage.getItem(LS_CYCLE_KEY);
+      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
     }catch(e){}
     return null;
   }
@@ -3399,172 +3396,131 @@ document.addEventListener('DOMContentLoaded', function(){
       const raw = localStorage.getItem(LS_POS_KEY);
       if (raw){ try{ const old = JSON.parse(raw); pos.step = old.step ?? null; }catch(e){} }
       localStorage.setItem(LS_POS_KEY, JSON.stringify(pos));
-      localStorage.setItem('icu.lastCycle', String(cycle));
+      localStorage.setItem(LS_CYCLE_KEY, String(cycle));
     }catch(e){}
   }
-  function qsaCycles(){
-    const root = document.querySelector('.cyclebar');
-    if (!root) return [];
-    // Known class for cycle dots/segments in this build:
-    const els = root.querySelectorAll('.seg, .dot, [data-cycle], button');
-    return Array.from(els);
+  function qsaSegments(){
+    const bar = document.querySelector('.cyclebar');
+    if (!bar) return [];
+    return Array.from(bar.querySelectorAll('.seg, .dot, [data-cycle], button'));
   }
-  function currentCycleIndex(segs){
-    let idx = segs.findIndex(el => el.classList && el.classList.contains('current'));
-    if (idx >= 0) return idx;
-    idx = segs.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-current') === 'true'));
-    if (idx >= 0) return idx;
-    idx = segs.findIndex(el => el.getAttribute && (el.getAttribute('data-current') === 'true'));
-    return idx;
+  function currentIdx(segs){
+    let i = segs.findIndex(el => el.classList && el.classList.contains('current'));
+    if (i !== -1) return i;
+    i = segs.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-current') === 'true' || el.getAttribute('data-current') === 'true'));
+    return i;
   }
-  function gotoCycle(cycleNumber){
-    const segs = qsaCycles();
+  function setCycleOneShot(cycle){
+    const segs = qsaSegments();
     if (!segs.length) return false;
-    const targetIdx = Math.min(Math.max(cycleNumber-1,0), segs.length-1);
-    const curIdx = currentCycleIndex(segs);
-    if (curIdx === targetIdx) return true;
-    const el = segs[targetIdx];
+    const target = Math.min(Math.max(cycle-1,0), segs.length-1);
+    const cur = currentIdx(segs);
+    if (cur === target) return true;
+    const el = segs[target];
     if (!el) return false;
+    // One-shot: click once and return
     try{ el.click(); }catch(e){}
     try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }catch(e){}
-    try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle: cycleNumber}})); }catch(e){}
+    try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle}})); }catch(e){}
     return true;
   }
 
-  // --- polite, debounced restore ---
-  let restoreTimer = null;
-  let restoreTries = 0;
-  let stableCount = 0;
-  let userCooldownTimer = null;
-  let inUserCooldown = false;
-  const MAX_TRIES = 18;     // ~2 seconds at 110ms
-  const INTERVAL  = 110;
-  const STABLE_NEED = 3;    // need to see target hold steady for 3 checks
-
-  function startUserCooldown(ms=900){
-    inUserCooldown = true;
-    clearTimeout(userCooldownTimer);
-    userCooldownTimer = setTimeout(()=>{ inUserCooldown = false; }, ms);
+  // Track user intent to avoid overriding
+  let userRecentlyInteracted = false;
+  let userTimer = null;
+  function userPing(ms=900){
+    userRecentlyInteracted = true;
+    clearTimeout(userTimer);
+    userTimer = setTimeout(()=>{ userRecentlyInteracted = false; }, ms);
   }
+  window.addEventListener('keydown', (e)=>{
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) userPing();
+  }, true);
+  document.addEventListener('pointerdown', (e)=>{
+    if (e.target.closest('.cyclebar, #prevCycleBtn, #nextCycleBtn')) userPing();
+  }, true);
+  document.addEventListener('click', (e)=>{
+    if (e.target.closest('.cyclebar, #prevCycleBtn, #nextCycleBtn')) userPing();
+  }, true);
 
-  function scheduleRestore(cycle){
-    if (!Number.isInteger(cycle) || cycle < 1) return;
-    clearTimeout(restoreTimer);
-    restoreTries = 0;
-    stableCount = 0;
-    // attempt immediately, then debounce
-    attemptRestore(cycle);
-  }
-  function attemptRestore(cycle){
-    if (inUserCooldown){
-      // back off while user is navigating
-      restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
-      return;
-    }
-    const segs = qsaCycles();
-    if (!segs.length){
-      restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
-      return;
-    }
-    const targetIdx = Math.min(Math.max(cycle-1,0), segs.length-1);
-    const curIdx = currentCycleIndex(segs);
-
-    if (curIdx === targetIdx){
-      stableCount++;
-      if (stableCount >= STABLE_NEED){
-        clearTimeout(restoreTimer);
-        return; // success & stable
-      }
-      restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
-      return;
-    }else{
-      stableCount = 0;
-      gotoCycle(cycle);
-    }
-
-    restoreTries++;
-    if (restoreTries >= MAX_TRIES){
-      clearTimeout(restoreTimer);
-      return; // give up politely
-    }
-    restoreTimer = setTimeout(()=>attemptRestore(cycle), INTERVAL);
-  }
-
-  // --- listen for user navigation to create cooldown ---
-  function bindUserInputs(){
-    // Known IDs (if present)
-    ['prevCycleBtn','nextCycleBtn','prevStepBtn','nextStepBtn','startStopBtn']
-      .forEach(id => {
-        const el = document.getElementById(id);
-        if (el){
-          el.addEventListener('click', ()=>startUserCooldown(), true);
-          el.addEventListener('pointerdown', ()=>startUserCooldown(), true);
-        }
-      });
-    // Any button inside the cyclebar
-    const bar = document.querySelector('.cyclebar');
-    if (bar){
-      bar.addEventListener('click', (e)=>{ if (e.target.closest('button, .seg, .dot')) startUserCooldown(); }, true);
-      bar.addEventListener('pointerdown', (e)=>{ if (e.target.closest('button, .seg, .dot')) startUserCooldown(); }, true);
-    }
-    // Arrow keys
-    window.addEventListener('keydown', (e)=>{
-      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) startUserCooldown();
-    }, true);
-  }
-
-  // --- observe current cycle change to save once per change (edge-triggered) ---
-  let lastSavedIdx = -1;
-  const cycleObserver = new MutationObserver(()=>{
-    const segs = qsaCycles();
+  // Edge-triggered save when .current changes
+  let lastSaved = -1;
+  const cycleObs = new MutationObserver(()=>{
+    const segs = qsaSegments();
     if (!segs.length) return;
-    const idx = currentCycleIndex(segs);
-    if (idx !== -1 && idx !== lastSavedIdx){
-      lastSavedIdx = idx;
+    const idx = currentIdx(segs);
+    if (idx !== -1 && idx !== lastSaved){
+      lastSaved = idx;
       saveCycle(idx + 1);
     }
   });
-  function observeCyclebar(){
+
+  // Debounced "quiet window" detect across cyclebar + table
+  let quietTimer = null;
+  let applied = false;
+  const DEBOUNCE = 750;      // quiet window
+  const MAX_WINDOW = 8000;   // stop watching after 8s
+
+  function kickQuietTimer(){
+    if (applied) return;
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(()=>{
+      if (applied) return;
+      if (userRecentlyInteracted) return; // don't override user
+      const want = getSavedCycle();
+      if (Number.isInteger(want) && want > 0){
+        setCycleOneShot(want);  // assert once
+      }
+      applied = true;
+      teardown();
+    }, DEBOUNCE);
+  }
+
+  const tableObs = new MutationObserver(kickQuietTimer);
+
+  function setup(){
+    // Observe the cyclebar for current changes (to save) and for render activity (to debounce)
     const bar = document.querySelector('.cyclebar') || document.body;
-    cycleObserver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
+    cycleObs.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
+    // Observe table renders
+    const tb = document.querySelector('#tbl tbody') || document.querySelector('#tbl') || document.body;
+    tableObs.observe(tb, {subtree:true, childList:true});
+
+    // Start a max window cutoff
+    setTimeout(()=>{ if (!applied) teardown(); }, MAX_WINDOW);
+
+    // Also start the quiet timer immediately so a static page still asserts once
+    kickQuietTimer();
   }
 
-  // --- hook lifecycle ---
-  function kickoff(){
-    bindUserInputs();
-    observeCyclebar();
-    // after DOM ready or pageshow, try a short, polite restore
-    const want = getSavedCycle();
-    if (Number.isInteger(want) && want > 0){
-      scheduleRestore(want);
-    }
+  function teardown(){
+    try{ cycleObs.disconnect(); }catch(e){}
+    try{ tableObs.disconnect(); }catch(e){}
+    clearTimeout(quietTimer);
   }
 
-  // Run on initial load and on iOS bfcache restore
+  // Lifecycle
+  function start(){
+    applied = false;
+    setup();
+  }
   if (document.readyState === 'complete' || document.readyState === 'interactive'){
-    kickoff();
+    start();
   }else{
-    window.addEventListener('DOMContentLoaded', kickoff, {once:true});
+    window.addEventListener('DOMContentLoaded', start, {once:true});
   }
-  window.addEventListener('pageshow', kickoff);
+  window.addEventListener('pageshow', start);  // iOS bfcache
 
-  // After table renders (Generate), try one short restore again
-  const tableObserver = new MutationObserver(()=>{
-    const want = getSavedCycle();
-    if (Number.isInteger(want) && want > 0){
-      scheduleRestore(want);
-    }
+  // Persist on pagehide/hidden
+  function persistOnExit(){
+    const segs = qsaSegments();
+    const idx = currentIdx(segs);
+    if (idx >= 0) saveCycle(idx + 1);
+  }
+  window.addEventListener('pagehide', persistOnExit);
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.visibilityState === 'hidden') persistOnExit();
   });
-  (function observeTable(){
-    const tb = document.querySelector('#tbl tbody') || document.querySelector('#tbl');
-    if (tb){
-      tableObserver.observe(tb, {childList:true, subtree:true});
-    }else{
-      // retry later if table not present yet
-      setTimeout(observeTable, 200);
-    }
-  })();
-
 })();
 </script>
 
