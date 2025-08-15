@@ -2,115 +2,6 @@
 
 <html lang="en">
 <head>
-
-<!-- iPad/Safari cycle restore v5: pre-init storage shim -->
-<script>
-(function(){
-  try{
-    const LS_POS_KEY = 'icu.lastPos';
-    const LS_CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
-
-    // Determine the desired cycle ("authoritative" value)
-    function getDesiredCycle(){
-      try{
-        // Prefer explicit lastCycle
-        for (const k of LS_CYCLE_KEYS){
-          const v = localStorage.getItem(k);
-          if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
-        }
-        // Fall back to lastPos.cycle
-        const raw = localStorage.getItem(LS_POS_KEY);
-        if (raw){
-          const obj = JSON.parse(raw);
-          if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
-        }
-      }catch(e){}
-      return null;
-    }
-
-    // Keep an authoritative cycle cached for this page load
-    const desiredCycle = getDesiredCycle();
-
-    // If we don't have a desired cycle, don't patch anything
-    if (!Number.isInteger(desiredCycle) || desiredCycle < 1){
-      return;
-    }
-
-    // Patch getItem to inject the desired cycle into 'icu.lastPos'
-    const _getItem = Storage.prototype.getItem;
-    const _setItem = Storage.prototype.setItem;
-    let enabled = true;
-
-    Storage.prototype.getItem = function(key){
-      const val = _getItem.apply(this, arguments);
-      if (!enabled) return val;
-      try{
-        // Keep 'icu.lastCycle' in sync
-        if (LS_CYCLE_KEYS.includes(key)){
-          return String(desiredCycle);
-        }
-        if (key === LS_POS_KEY){
-          if (val){
-            try{
-              const obj = JSON.parse(val);
-              // Merge: preserve existing step, overwrite cycle
-              const merged = {
-                ...obj,
-                cycle: desiredCycle
-              };
-              return JSON.stringify(merged);
-            }catch(e){
-              // If not JSON, replace with minimal structure
-              return JSON.stringify({cycle: desiredCycle, step: null});
-            }
-          }else{
-            return JSON.stringify({cycle: desiredCycle, step: null});
-          }
-        }
-      }catch(e){}
-      return val;
-    };
-
-    // Patch setItem to keep our cycle stored authoritatively when the app saves
-    Storage.prototype.setItem = function(key, value){
-      try{
-        if (key === LS_POS_KEY && value){
-          try{
-            const obj = JSON.parse(value);
-            if (Number.isInteger(obj?.cycle) && obj.cycle >= 1){
-              // Mirror to 'icu.lastCycle' so future loads know the last cycle
-              _setItem.call(this, 'icu.lastCycle', String(obj.cycle));
-            }
-          }catch(e){}
-        }
-        if (LS_CYCLE_KEYS.includes(key)){
-          // Normalize to our canonical key
-          _setItem.call(this, 'icu.lastCycle', String(value));
-          return;
-        }
-      }catch(e){}
-      return _setItem.apply(this, arguments);
-    };
-
-    // Disable the shim shortly after init to avoid affecting runtime behavior
-    function disableShimSoon(){
-      // Give the app a brief window to finish initial reads
-      setTimeout(function(){ enabled = false; }, 1200);
-    }
-    if (document.readyState === 'complete' || document.readyState === 'interactive'){
-      disableShimSoon();
-    }else{
-      window.addEventListener('DOMContentLoaded', disableShimSoon, {once:true});
-    }
-    // Also ensure we disable after bfcache restores
-    window.addEventListener('pageshow', function(){ setTimeout(function(){ enabled = false; }, 1200); });
-
-  }catch(err){
-    // Fail quietly
-  }
-})();
-</script>
-
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>Interleaved Clicking Up Metronome</title>
@@ -3475,6 +3366,112 @@ document.addEventListener('DOMContentLoaded', function(){
     updateSilenceInputDefault(true); // set to midpoint if linked or empty
     wireEvents();               // attach listeners
     savePersist();              // persist any defaults
+  });
+})();
+</script>
+
+
+<!-- iPad/Safari cycle restore v6: first-stable-current -> one-shot switch -->
+<script>
+(function(){
+  const LS_POS_KEY = 'icu.lastPos';
+  const LS_CYCLE_KEY = 'icu.lastCycle';
+
+  function getSavedCycle(){
+    try{
+      const raw = localStorage.getItem(LS_POS_KEY);
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (Number.isInteger(obj.cycle) && obj.cycle >= 1) return obj.cycle;
+      }
+      const v = localStorage.getItem(LS_CYCLE_KEY);
+      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+    }catch(e){}
+    return null;
+  }
+  function saveCycle(cycle){
+    if (!Number.isInteger(cycle) || cycle < 1) return;
+    try{
+      let pos = {cycle, step:null};
+      const raw = localStorage.getItem(LS_POS_KEY);
+      if (raw){ try{ const old = JSON.parse(raw); pos.step = old.step ?? null; }catch(e){} }
+      localStorage.setItem(LS_POS_KEY, JSON.stringify(pos));
+      localStorage.setItem(LS_CYCLE_KEY, String(cycle));
+    }catch(e){}
+  }
+  function segs(){ 
+    const bar = document.querySelector('.cyclebar'); 
+    return bar ? Array.from(bar.querySelectorAll('.seg, .dot, [data-cycle], button')) : []; 
+  }
+  function curIdx(list){
+    let i = list.findIndex(el => el.classList && el.classList.contains('current'));
+    if (i !== -1) return i;
+    i = list.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed')==='true' || el.getAttribute('aria-current')==='true' || el.getAttribute('data-current')==='true'));
+    return i;
+  }
+  function oneShotSwitch(toCycle){
+    const list = segs();
+    if (!list.length) return;
+    const idx = Math.min(Math.max(toCycle-1,0), list.length-1);
+    const el = list[idx];
+    if (!el) return;
+    try{ el.click(); }catch(e){}
+    try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }catch(e){}
+    try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle: toCycle}})); }catch(e){}
+  }
+
+  // Edge-triggered save when .current changes
+  let lastSaved = -1;
+  const saver = new MutationObserver(()=>{
+    const list = segs();
+    if (!list.length) return;
+    const i = curIdx(list);
+    if (i !== -1 && i !== lastSaved){
+      lastSaved = i;
+      saveCycle(i+1);
+    }
+  });
+
+  // One-shot restore right after the app first sets any current cycle
+  const desired = getSavedCycle();
+  let done = false;
+  const firstSetWatcher = new MutationObserver(()=>{
+    if (done) return;
+    const list = segs();
+    const i = curIdx(list);
+    if (i !== -1){
+      // App has chosen its initial cycle (often 1). Immediately switch once.
+      done = true;
+      queueMicrotask(()=>{
+        if (Number.isInteger(desired) && desired > 0 && desired-1 !== i){
+          oneShotSwitch(desired);
+        }
+        teardown();
+      });
+    }
+  });
+
+  function setup(){
+    const bar = document.querySelector('.cyclebar') || document.body;
+    firstSetWatcher.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
+    saver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
+  }
+  function teardown(){
+    try{ firstSetWatcher.disconnect(); }catch(e){}
+    // keep saver running during the session so future reloads have the latest
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive'){
+    setup();
+  }else{
+    window.addEventListener('DOMContentLoaded', setup, {once:true});
+  }
+  window.addEventListener('pageshow', setup);
+  window.addEventListener('pagehide', ()=>{
+    // Persist cycle on exit
+    const list = segs();
+    const i = curIdx(list);
+    if (i >= 0) saveCycle(i+1);
   });
 })();
 </script>
