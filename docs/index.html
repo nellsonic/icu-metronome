@@ -3371,109 +3371,172 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
-<!-- iPad/Safari: preserve last cycle on refresh (runs after render) -->
+<!-- iPad/Safari cycle restore v2: MutationObserver + multi-selector + re-assert -->
 <script>
 (function(){
-  // Try multiple known key shapes; keep step untouched since your build already restores it.
-  function readStoredCycle(){
+  const LS_POS_KEY = 'icu.lastPos';
+  const LS_CYCLE_KEYS = ['icu.lastCycle','lastCycle'];
+  const MAX_WAIT_MS = 5000;
+
+  function getSavedCycle(){
     try{
-      // 1) Combined object: {cycle, step}
-      const posRaw = localStorage.getItem('icu.lastPos');
-      if (posRaw){
-        const pos = JSON.parse(posRaw);
-        if (Number.isInteger(pos.cycle)) return pos.cycle;
+      const raw = localStorage.getItem(LS_POS_KEY);
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (Number.isInteger(obj.cycle) && obj.cycle >= 1) return obj.cycle;
       }
-      // 2) Separate keys
-      const c1 = localStorage.getItem('icu.lastCycle');
-      if (c1 !== null) return parseInt(c1, 10);
-      const c2 = localStorage.getItem('lastCycle');
-      if (c2 !== null) return parseInt(c2, 10);
+      for (const k of LS_CYCLE_KEYS){
+        const v = localStorage.getItem(k);
+        if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+      }
     }catch(e){}
     return null;
   }
 
-  function restoreCycleIfNeeded(){
-    const wanted = readStoredCycle();
-    if (!Number.isInteger(wanted) || wanted < 1) return;
+  function saveCycle(cycle){
+    if (!Number.isInteger(cycle) || cycle < 1) return;
+    try{
+      // Preserve existing step if present
+      let pos = {cycle, step:null};
+      const raw = localStorage.getItem(LS_POS_KEY);
+      if (raw){ try{ const old = JSON.parse(raw); pos.step = old.step ?? null; }catch(e){} }
+      localStorage.setItem(LS_POS_KEY, JSON.stringify(pos));
+      localStorage.setItem('icu.lastCycle', String(cycle));
+    }catch(e){}
+  }
 
-    // Find cycle "segments" UI (class seen in CSS: .cyclebar .seg)
-    const segs = document.querySelectorAll('.cyclebar .seg');
-    if (!segs || !segs.length) return false;
-
-    // Determine current cycle by index of element with .current
-    let currentIdx = -1;
-    segs.forEach((el, idx)=>{ if (el.classList.contains('current')) currentIdx = idx; });
-
-    const targetIdx = Math.min(Math.max(wanted - 1, 0), segs.length - 1);
-
-    if (currentIdx !== targetIdx){
-      // Click the target seg to switch cycles (safer than calling internals)
-      segs[targetIdx].click();
+  function qsaCycles(){
+    const roots = document.querySelectorAll('.cyclebar');
+    if (!roots.length) return [];
+    // Try common child patterns
+    const sels = [
+      '.seg', '.dot', '[data-cycle]', 'button', 'div', 'span'
+    ];
+    for (const root of roots){
+      for (const s of sels){
+        const els = root.querySelectorAll(s);
+        // Heuristic: 2+ items and at least one has text or aria-label or data-cycle
+        if (els.length >= 2){
+          return Array.from(els);
+        }
+      }
     }
+    return [];
+  }
 
+  function currentCycleIndex(segs){
+    // zero-based
+    let idx = segs.findIndex(el => el.classList && el.classList.contains('current'));
+    if (idx >= 0) return idx;
+    // Fallback: look for aria-pressed or aria-current
+    idx = segs.findIndex(el => el.getAttribute && (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-current') === 'true'));
+    if (idx >= 0) return idx;
+    // Fallback: look for data-current
+    idx = segs.findIndex(el => el.getAttribute && (el.getAttribute('data-current') === 'true'));
+    return idx;
+  }
+
+  function switchToCycle(cycleNumber){
+    const segs = qsaCycles();
+    if (!segs.length) return false;
+    const targetIdx = Math.min(Math.max(cycleNumber-1,0), segs.length-1);
+    const curIdx = currentCycleIndex(segs);
+    if (curIdx === targetIdx){
+      return true;
+    }
+    const el = segs[targetIdx];
+    if (!el) return false;
+
+    // Prefer a click; also try dispatching events that frameworks listen for
+    try{ el.click(); }catch(e){}
+    try{ el.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true})); }catch(e){}
+    try{ el.dispatchEvent(new Event('change', {bubbles:true})); }catch(e){}
+    try{ document.dispatchEvent(new CustomEvent('gotoCycle', {detail:{cycle: cycleNumber}})); }catch(e){}
+
+    // Give UI a moment to react; we will verify later
     return true;
   }
 
-  // Wait until the cyclebar is present (iOS can race due to bfcache/pageshow timing)
-  function waitForCyclebarThenRestore(attemptsLeft){
-    if (restoreCycleIfNeeded()) return;
-    if (attemptsLeft <= 0) return;
-    setTimeout(()=>waitForCyclebarThenRestore(attemptsLeft - 1), 60);
-  }
-
-  // On iOS Safari, use pageshow (fires on bfcache restore too)
-  window.addEventListener('pageshow', function(){
-    // Try a few times to beat races with "Generate on load"
-    waitForCyclebarThenRestore(20);
+  // Observe cyclebar to detect when it appears/changes; also save on change
+  let lastObservedIdx = -1;
+  const cycleObserver = new MutationObserver(() => {
+    const segs = qsaCycles();
+    if (!segs.length) return;
+    const idx = currentCycleIndex(segs);
+    if (idx !== -1 && idx !== lastObservedIdx){
+      lastObservedIdx = idx;
+      saveCycle(idx + 1);
+    }
   });
 
-  // Also run on normal loads
-  if (document.readyState === 'complete' || document.readyState === 'interactive'){
-    waitForCyclebarThenRestore(20);
-  }else{
-    window.addEventListener('DOMContentLoaded', function(){
-      waitForCyclebarThenRestore(20);
-    }, { once: true });
+  function observeCyclebar(){
+    const bar = document.querySelector('.cyclebar') || document.body;
+    cycleObserver.observe(bar, {subtree:true, childList:true, attributes:true, attributeFilter:['class','aria-pressed','aria-current','data-current']});
   }
 
-  // Ensure we save the cycle on navigation changes (clicking segs)
+  // Re-assert desired cycle several times over a window to beat late renders
+  function reassertCycle(cycleNum){
+    const start = performance.now();
+    (function tick(){
+      switchToCycle(cycleNum);
+      if (performance.now() - start < MAX_WAIT_MS){
+        setTimeout(tick, 120);
+      }
+    })();
+  }
+
+  // Try restore when table rows populate (after Generate)
+  const tableObserver = new MutationObserver(()=>{
+    const cycle = getSavedCycle();
+    if (Number.isInteger(cycle) && cycle > 0){
+      reassertCycle(cycle);
+    }
+  });
+  function observeTable(){
+    const tb = document.querySelector('#tbl tbody') || document.querySelector('#tbl') || document.body;
+    tableObserver.observe(tb, {subtree:true, childList:true});
+  }
+
+  function kickoff(){
+    observeCyclebar();
+    observeTable();
+    const cycle = getSavedCycle();
+    if (Number.isInteger(cycle) && cycle > 0){
+      reassertCycle(cycle);
+    }
+  }
+
+  // iOS-friendly lifecycle hooks
+  window.addEventListener('pageshow', kickoff, {once:false});
+  if (document.readyState === 'complete' || document.readyState === 'interactive'){
+    kickoff();
+  }else{
+    window.addEventListener('DOMContentLoaded', kickoff, {once:true});
+  }
+
+  // Save on user taps to cycle dots
   document.addEventListener('click', function(e){
-    const el = e.target.closest('.cyclebar .seg');
+    const el = e.target.closest('.cyclebar *');
     if (!el) return;
-    const segs = Array.from(document.querySelectorAll('.cyclebar .seg'));
-    const idx = segs.indexOf(el); // zero-based
+    const segs = qsaCycles();
+    const idx = segs.indexOf(el);
     if (idx >= 0){
-      try {
-        const posRaw = localStorage.getItem('icu.lastPos');
-        let pos = { cycle: idx + 1, step: null };
-        if (posRaw){
-          try { const old = JSON.parse(posRaw); pos.step = old.step ?? null; } catch(e){}
-        }
-        localStorage.setItem('icu.lastPos', JSON.stringify(pos));
-        localStorage.setItem('icu.lastCycle', String(idx + 1));
-      } catch(e){}
+      saveCycle(idx + 1);
     }
   }, true);
 
-  // Also persist on visibility/pagehide for iOS
-  function saveCycleFromUI(){
-    const segs = Array.from(document.querySelectorAll('.cyclebar .seg'));
-    const idx = segs.findIndex(el => el.classList.contains('current'));
-    if (idx >= 0){
-      try{
-        const posRaw = localStorage.getItem('icu.lastPos');
-        let pos = { cycle: idx + 1, step: null };
-        if (posRaw){
-          try{ const old = JSON.parse(posRaw); pos.step = old.step ?? null; }catch(e){}
-        }
-        localStorage.setItem('icu.lastPos', JSON.stringify(pos));
-        localStorage.setItem('icu.lastCycle', String(idx + 1));
-      }catch(e){}
+  // Also save when leaving the page
+  window.addEventListener('pagehide', ()=>{
+    const segs = qsaCycles();
+    const idx = currentCycleIndex(segs);
+    if (idx >= 0) saveCycle(idx + 1);
+  });
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.visibilityState === 'hidden'){
+      const segs = qsaCycles();
+      const idx = currentCycleIndex(segs);
+      if (idx >= 0) saveCycle(idx + 1);
     }
-  }
-  window.addEventListener('pagehide', saveCycleFromUI);
-  document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'hidden') saveCycleFromUI();
   });
 })();
 </script>
