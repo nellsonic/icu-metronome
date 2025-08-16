@@ -2525,10 +2525,14 @@ function setCurrentIndexInCycle(i){
   tb.querySelectorAll('tr').forEach(tr=>tr.classList.remove('current'));
   const tr = tb.querySelectorAll('tr')[i];
   if(tr){ tr.classList.add('current'); if(!suppressScroll) tr.scrollIntoView({block:'nearest'}); }
+
+  try{ saveResumeState(); }catch(_){/*noop*/}
 }
+
 
 // Navigation
 function nextStep(){
+  try{ saveResumeState(); }catch(_){/*noop*/}
   const idxs = cycleMap.get(currentCycle) || [];
   if(idxs.length === 0) return;
   if(currentIndexInCycle < idxs.length - 1){
@@ -2545,6 +2549,7 @@ function nextStep(){
   if(isStarted) playCurrent();
 }
 function prevStep(){
+  try{ saveResumeState(); }catch(_){/*noop*/}
   const idxs = cycleMap.get(currentCycle) || [];
   if(idxs.length === 0) return;
   if(currentIndexInCycle > 0){
@@ -2562,8 +2567,10 @@ function prevStep(){
   }
   if(isStarted) playCurrent();
 }
-function nextCycle(){ const total = +byId('cycles').value||1; if(currentCycle < total){ currentCycle++; renderCycle(); if(isStarted) playCurrent(); } }
-function prevCycle(){ if(currentCycle > 1){ currentCycle--; renderCycle(); if(isStarted) playCurrent(); } }
+function nextCycle(){ const total = +byId('cycles').value||1; if(currentCycle < total){ currentCycle++; renderCycle(); try{ saveResumeState(); }catch(_){/*noop*/}
+    if(isStarted) playCurrent(); } }
+function prevCycle(){ if(currentCycle > 1){ currentCycle--; renderCycle(); try{ saveResumeState(); }catch(_){/*noop*/}
+    if(isStarted) playCurrent(); } }
 
 // === Audio (onset-aligned, master gain, hardwired keys) ===
 let audioCtx=null, masterGain=null, mainBuf=null, subBuf=null, beatTimer=null, isStarted=false;
