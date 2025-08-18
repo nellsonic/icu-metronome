@@ -1975,7 +1975,7 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <label>Cycles (1–15)</label>
 <input id="cycles" max="15" min="1" type="number" value="7"/>
 </div>
-</div><div class="row"><div><label>Start segment (optional)</label><input id="startSeg" max="99" min="1" placeholder="blank = default" type="number"/></div><div></div></div>
+</div><div class="row"><div><label for="startSeg">Start segment (optional) Must be &gt;1 and less than # of cycles</label><input id="startSeg" max="99" min="1" placeholder="blank = default" type="number"/></div><div></div></div>
 <div class="row">
 <div>
 <label>Subdivision</label>
@@ -2606,6 +2606,8 @@ let onsetMainMs = 0, onsetSubMs = 0, alignMs = 0;
 async function ensureAudio(){
   if(!audioCtx){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if (window.installAudioGuards) { installAudioGuards(); }
+    try { audioCtx.resume && audioCtx.resume(); } catch(_){}
     masterGain = audioCtx.createGain();
     masterGain.connect(audioCtx.destination);
     try{ setEffectiveGainFromSlider(); }catch(_){ masterGain.gain.value = Math.max(0, Math.min(1, ((+document.getElementById('volume')?.value||50)/100) * (document.getElementById('allowFullVolume')?.checked ? 1 : 0.4) )); }
@@ -3575,6 +3577,121 @@ document.addEventListener('DOMContentLoaded', function(){
     document.addEventListener('DOMContentLoaded', attachHandlers);
   } else {
     attachHandlers();
+  }
+})();
+</script>
+
+
+<!-- iOS/Safari audio unlock & resume guards -->
+<script>
+(function(){
+  let __audioUnlocked = false;
+  function _playSilentTick(ctx){
+    try{
+      const b = ctx.createBuffer(1, 1, 22050);
+      const s = ctx.createBufferSource();
+      s.buffer = b;
+      s.connect(ctx.destination);
+      try { s.start(0); } catch(_) {}
+      setTimeout(()=>{ try{ s.disconnect(); }catch(_){}} , 0);
+    }catch(_){}
+  }
+  function _resumeIfNeeded(){
+    if (!window.audioCtx) return;
+    if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+      audioCtx.resume().catch(()=>{});
+    }
+  }
+  window.installAudioGuards = function(){
+    if (window.__audioGuardsInstalled) return;
+    window.__audioGuardsInstalled = true;
+    const unlock = ()=>{
+      if (!window.audioCtx) return;
+      if (!__audioUnlocked) { _playSilentTick(audioCtx); __audioUnlocked = true; }
+      _resumeIfNeeded();
+    };
+    ['pointerdown','touchend','keydown','mousedown'].forEach(ev => {
+      document.addEventListener(ev, unlock, {passive:true});
+    });
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) _resumeIfNeeded(); });
+    window.addEventListener('pageshow', _resumeIfNeeded);
+  };
+})();
+</script>
+
+
+<!-- Enhanced iOS(WebKit) audio lifecycle handling -->
+<script>
+(function(){
+  const isIOSWebKit = /AppleWebKit/.test(navigator.userAgent) && /(iPad|iPhone|iPod)/.test(navigator.userAgent);
+  let resuming = false;
+
+  function ensureCtx(){
+    try{
+      if (!window.audioCtx || window.audioCtx.state === 'closed') {
+        window.audioCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+      }
+      return window.audioCtx;
+    }catch(e){ return null; }
+  }
+
+  async function resumeCtx(){
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    if (resuming) return;
+    resuming = true;
+    try {
+      if (ctx.state !== 'running') {
+        await ctx.resume().catch(()=>{});
+        // extra tick satisfies gesture on some builds
+        const b = ctx.createBuffer(1,1,22050), s = ctx.createBufferSource();
+        s.buffer = b; s.connect(ctx.destination);
+        try { s.start(0); } catch(_) {}
+        setTimeout(()=>{ try{s.disconnect();}catch(_){ } }, 0);
+      }
+    } finally {
+      resuming = false;
+    }
+  }
+
+  function installLifecycle(){
+    if (window.__enhancedAudioLifecycle) return;
+    window.__enhancedAudioLifecycle = true;
+
+    const wake = ()=>resumeCtx();
+    ['pointerdown','touchend','keydown','mousedown'].forEach(ev=>document.addEventListener(ev, wake, {passive:true}));
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) resumeCtx(); });
+    window.addEventListener('pageshow', (e)=>{ if (e.persisted) resumeCtx(); else resumeCtx(); });
+    window.addEventListener('pagehide', ()=>{/* webkit bfcache */});
+    document.addEventListener('freeze', ()=>{/* hint */});
+    // monitor state changes (some WebKit builds flip to 'interrupted')
+    const ctx = ensureCtx();
+    if (ctx) {
+      ctx.onstatechange = ()=>{
+        if (ctx.state === 'suspended' || ctx.state === 'interrupted') resumeCtx();
+      };
+    }
+  }
+
+  // Hook Start button explicitly for guaranteed gesture path
+  function hookStart(){
+    const btn = document.getElementById('start');
+    if (!btn) return;
+    if (btn.__audioHooked) return;
+    btn.__audioHooked = true;
+    btn.addEventListener('click', ()=>resumeCtx(), {capture:true});
+    btn.addEventListener('touchend', ()=>resumeCtx(), {capture:true, passive:true});
+  }
+
+  function init(){
+    installLifecycle();
+    hookStart();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
 })();
 </script>
