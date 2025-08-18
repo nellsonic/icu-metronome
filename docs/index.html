@@ -1975,8 +1975,7 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <label>Cycles (1–15)</label>
 <input id="cycles" max="15" min="1" type="number" value="7"/>
 </div>
-</div><div class="row"><div><label for="startSeg">Start segment - optional<br>(Must be &gt;1 and &lt; number of cycles.)</label><input id="startSeg" max="99" min="1" placeholder="blank = default" type="number"/></div><div></div></div>
-<div class="row">
+</div><div class="row">
 <div>
 <label>Subdivision</label>
 <select id="subdiv">
@@ -2590,9 +2589,9 @@ function prevStep(){
   }
   if(isStarted) playCurrent();
 }
-function nextCycle(){ const total = +byId('cycles').value||1; if(currentCycle < total){ currentCycle++; renderCycle(); try{ saveResumeState(); }catch(_){/*noop*/}
+function nextCycle(){ const total = +byId('cycles').value||1; if(currentCycle < total){ currentCycle++; renderCycle(); setCurrentIndexInCycle(0); scrollCycleHeaderIntoView(); try{ saveResumeState(); }catch(_){/*noop*/}
     if(isStarted) playCurrent(); } }
-function prevCycle(){ if(currentCycle > 1){ currentCycle--; renderCycle(); try{ saveResumeState(); }catch(_){/*noop*/}
+function prevCycle(){ if(currentCycle > 1){ currentCycle--; renderCycle(); setCurrentIndexInCycle(0); scrollCycleHeaderIntoView(); try{ saveResumeState(); }catch(_){/*noop*/}
     if(isStarted) playCurrent(); } }
 
 // === Audio (onset-aligned, master gain, hardwired keys) ===
@@ -2958,7 +2957,49 @@ function restoreResumeOnLoad(){
   function q(sel){ return document.querySelector(sel); }
   function qa(sel){ return document.querySelectorAll(sel); }
   function byId(id){ return document.getElementById(id); }
-  function now(){ return Date.now ? Date.now() : +new Date(); }
+  
+
+// Smoothly scroll the cycle header into view (top of viewport)
+
+// Smoothly scroll the cycle header to the very top of the usable viewport.
+function scrollCycleHeaderIntoView(){
+  try{
+    const header = document.getElementById('cycleLabel');
+    const wrapper = (typeof getWrapper === 'function') ? getWrapper() : null;
+    // Always reset the internal table wrapper to top as well
+    try{
+      if (wrapper && typeof wrapper.scrollTop === 'number') wrapper.scrollTop = 0;
+    }catch(_){/*noop*/}
+
+    if (!header) {
+      // Fallback: hard jump to page top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Compute obstruction from sticky headers, etc., if available
+    let obstruction = 0;
+    try{
+      if (typeof computeObstructionTop === 'function'){
+        obstruction = computeObstructionTop() || 0;
+      }
+    }catch(_){ obstruction = 0; }
+
+    const rect = header.getBoundingClientRect();
+    const absoluteTop = rect.top + window.scrollY;
+    const targetTop = Math.max(0, Math.round(absoluteTop - obstruction - 6)); // small breathing room
+    window.scrollTo({ top: targetTop, behavior: 'smooth' });
+  }catch(_){ /* noop */ }
+}
+);
+    }else{
+      // Fallback: jump to top
+      window.scrollTo(0, 0);
+    }
+  }catch(_){/*noop*/}
+}
+
+function now(){ return Date.now ? Date.now() : +new Date(); }
 
   // ---------- Persistence (multi‑backend + URL hash) ----------
   var KEY='icu:lastIndex';
