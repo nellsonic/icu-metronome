@@ -1940,6 +1940,14 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 }
 </style>
 
+
+<style>
+  label:has(> #startSeg:disabled) {
+    color: #888;
+    opacity: 0.7;
+  }
+</style>
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
@@ -2105,7 +2113,9 @@ function saveSettings(){
     volume:Math.min(100, Math.max(0, +byId('volume').value||50)),
     pulse: !!byId('pulseToggle').checked,
     limitTarget: !!byId('limitTarget').checked,
-    startSeg: (byId('startSeg')?.value ? +byId('startSeg').value : null),
+    let segVal = (byId('startSeg')?.value ? +byId('startSeg').value : null);
+    if (segVal === 1 || segVal === +byId('cycles').value) { segVal = null; }
+    startSeg: segVal,
     backwards: !!byId('backwards')?.checked,
     theme: (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark')),
     allowFullVolume: !!byId('allowFullVolume')?.checked,
@@ -2172,6 +2182,15 @@ byId('prevCycle').addEventListener('click', prevCycle);
 
 byId('limitTarget').addEventListener('change', ()=>{ saveSettings(); generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); });
 byId('startSeg')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
+
+byId('startSeg')?.addEventListener('input', ()=>{
+  const val = +byId('startSeg').value;
+  const maxC = +byId('cycles').value;
+  if (val === 1 || val === maxC) {
+    byId('startSeg').value = '';
+  }
+});
+
 byId('backwards')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
 
 byId('themeToggle').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
@@ -3491,6 +3510,68 @@ document.addEventListener('DOMContentLoaded', function(){
       try{ if (typeof window.__icuPersistCycle === 'function') window.__icuPersistCycle(window.currentCycle); }catch(_){}
     }
   });
+})();
+</script>
+
+
+<!-- StartSeg dynamic constraints -->
+<script>
+(function(){
+  function updateStartSegConstraints() {
+    const seg = byId('startSeg');
+    const cyc = +byId('cycles')?.value || 0;
+    if (!seg) return;
+
+    if (cyc <= 2) {
+      seg.value = '';
+      seg.disabled = true;
+      seg.title = 'Not applicable when Cycles \u2264 2';
+      seg.removeAttribute('min');
+      seg.removeAttribute('max');
+      seg.setCustomValidity('');
+    } else {
+      seg.disabled = false;
+      seg.title = `Choose 2 \u2026 ${cyc - 1}`;
+      seg.min = 2;
+      seg.max = cyc - 1;
+
+      const v = +seg.value;
+      if (v && (v < 2 || v > cyc - 1)) {
+        seg.value = '';
+        seg.setCustomValidity('');
+      }
+    }
+  }
+
+  function attachHandlers(){
+    const cycEl = byId('cycles');
+    const segEl = byId('startSeg');
+    if (cycEl) {
+      cycEl.addEventListener('input', updateStartSegConstraints);
+      cycEl.addEventListener('change', updateStartSegConstraints);
+    }
+    if (segEl) {
+      segEl.addEventListener('input', ()=>{
+        const seg = segEl;
+        const cyc = +byId('cycles')?.value || 0;
+        const v = +seg.value;
+        if (!v) { seg.setCustomValidity(''); return; }
+        if (cyc > 2 && (v < 2 || v > cyc - 1)) {
+          seg.setCustomValidity(`Choose a number between 2 and ${cyc - 1}.`);
+          seg.reportValidity();
+        } else {
+          seg.setCustomValidity('');
+        }
+      });
+    }
+    updateStartSegConstraints();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachHandlers);
+  } else {
+    attachHandlers();
+  }
 })();
 </script>
 
