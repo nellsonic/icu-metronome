@@ -2113,9 +2113,13 @@ function saveSettings(){
     volume:Math.min(100, Math.max(0, +byId('volume').value||50)),
     pulse: !!byId('pulseToggle').checked,
     limitTarget: !!byId('limitTarget').checked,
-    let segVal = (byId('startSeg')?.value ? +byId('startSeg').value : null);
-    if (segVal === 1 || segVal === +byId('cycles').value) { segVal = null; }
-    startSeg: segVal,
+    startSeg: (function(){ 
+      const seg = byId('startSeg'); 
+      const cycEl = byId('cycles'); 
+      const cyc = cycEl ? +cycEl.value : 0; 
+      const val = seg && seg.value ? +seg.value : null; 
+      return (val === 1 || val === cyc) ? null : val; 
+    })(),
     backwards: !!byId('backwards')?.checked,
     theme: (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark')),
     allowFullVolume: !!byId('allowFullVolume')?.checked,
