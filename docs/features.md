@@ -20,7 +20,7 @@ A metronome app that helps musicians progressively step up the tempo of all the 
 - **Start/Stop**: toggles playback.
 - **Subdivision**: Quarters, 8th’s, Triplets, 16ths, 5’s, 6’s, 7’s.
 - **Do not exceed Target Tempo**: Truncates the final step size if that step would exceed the Target Tempo.
-- **Start segment**: Pick a segment (ideally near the middle of the passage). Cycles will expand outward from that point, providing a variable practice option. If left blank, cycles will start with segment 1 and add additional segments in forward order by default.
-- **Backwards mode**: If checked, cycles start from the final segment and add in reverse. With a start segment selected, backwards mode reverses the usual order of additional segments being added around the start segment.
+- **Build Towards Center**: This provides a variable practice option by building the passage inward from the first and last segments, following the same tempo progression for each newly added segment as in the other modes. Adding Backwards mode while Build Towards the Center is engaged provides yet another variant.
+- **Backwards mode**: If checked, cycles start from the final segment and add in reverse.
 - **Silence subdivisions above**: Mutes subdivision clicks once the tempo passes the selected threshold, leaving only the main beats. This provides more rhythmic support at slower tempos versus more clarity at faster ones.
 - **Link to midpoint**: Sets the silence subdivisions threshold to exactly halfway between the current Start and Target tempos. If Start or Target tempos are changed, the silence point updates automatically to remain centered between them. While checked, any manual change to the 'Silence subdivisions above' value is disabled.
