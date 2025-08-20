@@ -3807,5 +3807,98 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+
+<!-- Full Volume toggle: iPad/WebKit-safe absolute restore + de-dupe -->
+<script>
+(function () {
+  const onReady = (fn) => (document.readyState === "loading"
+    ? document.addEventListener("DOMContentLoaded", fn, { once: true })
+    : fn());
+
+  onReady(() => {
+    const cb = document.querySelector("#allowFullVolume");
+    if (!cb) return;
+
+    // Try to find existing globals used by the app
+    const audioCtx = window.audioCtx || window.ctx || window.audioContext || null;
+    const masterGain = window.masterGain || window.mainGain || window.masterGainNode || null;
+
+    // If we don't have an AudioContext or a master gain node, do nothing safely.
+    if (!audioCtx || !masterGain || !masterGain.gain) return;
+
+    // Capture baseline once, after context is running
+    if (typeof window.__baselineGain === "undefined" || window.__baselineGain === null) {
+      // If context is not running yet, defer until it is
+      const capture = () => {
+        if (audioCtx.state === "running") {
+          if (typeof window.__baselineGain === "undefined" || window.__baselineGain === null) {
+            window.__baselineGain = masterGain.gain.value;
+          }
+          audioCtx.removeEventListener?.("statechange", capture);
+        }
+      };
+      capture();
+      audioCtx.addEventListener?.("statechange", capture);
+    }
+
+    // Avoid double handling (touch -> click)
+    if (!window.__lastFullVolState) window.__lastFullVolState = cb.checked;
+
+    function setAllowFullVolume(enabled) {
+      // De-dupe: only react to real state changes
+      if (enabled === window.__lastFullVolState) return;
+      window.__lastFullVolState = enabled;
+
+      const t = audioCtx.currentTime || 0;
+      const baseline = (typeof window.__baselineGain === "number" && window.__baselineGain > 0)
+        ? window.__baselineGain
+        : masterGain.gain.value || 0.8;
+
+      try {
+        masterGain.gain.cancelScheduledValues(t);
+        // Use tiny ramps to avoid zipper noise
+        if (enabled) {
+          // Ensure we ramp from baseline to 1.0
+          masterGain.gain.setValueAtTime(baseline, t);
+          masterGain.gain.linearRampToValueAtTime(1.0, t + 0.005);
+        } else {
+          // Restore exactly to baseline (absolute, not multiplicative)
+          masterGain.gain.setValueAtTime(1.0, t);
+          masterGain.gain.linearRampToValueAtTime(baseline, t + 0.005);
+        }
+      } catch (e) {
+        // Fail-safe: set directly if scheduling not allowed
+        masterGain.gain.value = enabled ? 1.0 : baseline;
+      }
+    }
+
+    // Normalize initial state to avoid platform inconsistencies
+    // (Don't force volume here; only record the current checkbox state)
+    window.__lastFullVolState = cb.checked;
+
+    // Prefer pointer events; suppress follow-up click to avoid double-fire on iPad
+    const onPointer = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setAllowFullVolume(cb.checked);
+    };
+    const onClickBlock = (e) => {
+      // Block the synthetic click that often fires after touch
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+
+    // Clean up any previous handlers if we got injected multiple times
+    cb.replaceWith(cb.cloneNode(true));
+    const fresh = document.querySelector("#allowFullVolume");
+    fresh.addEventListener("pointerup", onPointer, { passive: false });
+    fresh.addEventListener("click", onClickBlock, { passive: false });
+
+    // Expose for other code paths if needed
+    window.__setAllowFullVolume = setAllowFullVolume;
+  });
+})();
+</script>
 </body>
 </html>
