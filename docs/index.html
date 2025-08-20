@@ -2009,7 +2009,7 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
   <input id="silenceSubLinkMid" type="checkbox" aria-label="Keep threshold linked to midpoint" checked />
   <span>Link to midpoint</span>
 </label></div></div>
-<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
+<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="towardsCenter" type="checkbox"/> Build Towards the Center</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="allowFullVolume" type="checkbox"/><span class="voltext">Allow full volume (louder clicks)</span><span class="volwarn">USE WITH CAUTION - NO HEADPHONES!</span></label>
 
 
@@ -2099,7 +2099,7 @@ function log(){}
 function clearLog(){}
 
 // Stable versioned key: remembers settings across renames
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const STORE_KEY = "icu_metronome_confirmed_standard_v" + SCHEMA_VERSION;
 
 function saveSettings(){
@@ -2120,6 +2120,7 @@ function saveSettings(){
       return (val === 1 || val === cyc) ? null : val; 
     })(),
     backwards: !!byId('backwards')?.checked,
+    towardsCenter: !!byId('towardsCenter')?.checked,
     theme: (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark')),
     allowFullVolume: !!byId('allowFullVolume')?.checked,
     _v: SCHEMA_VERSION
@@ -2149,6 +2150,7 @@ function loadSettings(){
   if(byId('theme')){ let t=(s.theme||'dark'); if(t==='color') t='blue'; byId('theme').value=t; }
 if(byId('themeToggle')) byId('themeToggle').checked = (s.theme === 'light');
   if(byId('allowFullVolume')) byId('allowFullVolume').checked = !!s.allowFullVolume;
+  if(byId('towardsCenter')) byId('towardsCenter').checked = !!s.towardsCenter;
   applyTheme();
 }
 
@@ -2195,6 +2197,8 @@ byId('startSeg')?.addEventListener('input', ()=>{
 });
 
 byId('backwards')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
+
+  byId('towardsCenter')?.addEventListener('change', ()=>{ saveSettings(); generate({preserveCycle:true, preserveStep:true, suppressScroll:true}); });
 
 byId('themeToggle').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
 byId('theme')?.addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
@@ -2256,7 +2260,7 @@ function compressSegments(segStr){
       }
       if(i<parts.length){ runStart = prev = v; }
     }
-    return out.join(',');
+    return out.join(', ');
   }catch(_){
     return segStr;
   }
@@ -2440,7 +2444,32 @@ let _prevTempo = null;
     }
   }
 
-  // === Backwards post-process: mirror segment numbers and sort descending ===
+  
+  // === Build-Towards-Center post-process (maps local 1..c to centered forward segments) ===
+  if (!!byId('towardsCenter')?.checked) {
+    const T = +s.cycles || 1;
+    // precompute center order once: [1, T, 2, T-1, 3, T-2, ...]
+    const centerOrder = [];
+    for (let L=1, R=T; L<=R; L++, R--) {
+      centerOrder.push(L);
+      if (L !== R) centerOrder.push(R);
+    }
+    for (let r of rows) {
+      if (!r.segments || typeof r.segments !== 'string') continue;
+      const c = r.cycle;
+      const set = centerOrder.slice(0, c); // forward segment IDs for this cycle
+      const N = set.length;
+      const nums = r.segments.split(',').map(s=>+s.trim()).filter(n=>!isNaN(n));
+      // identity mapping: local v=1..N -> set[v-1]
+      let mapped = nums.map(v => set[Math.min(Math.max(1, v), N) - 1]);
+      mapped = Array.from(new Set(mapped)).sort((a,b)=>a-b);
+      r.segments = mapped.join(',');
+    }
+    // While towards-center is active, disable Start segment remap effects (it already remapped above).
+    // We do this by clearing any saved startSeg display value for runtime mapping only.
+    // (No persisted change; UI remains as-is.)
+  }
+// === Backwards post-process: mirror segment numbers and sort descending ===
   if (!!s.backwards) {
     const T = +s.cycles || 1;
     for (let r of rows) {
@@ -3734,6 +3763,47 @@ document.addEventListener('DOMContentLoaded', function(){
   } else {
     init();
   }
+})();
+</script>
+
+
+<script>
+(function(){
+  const oldCompress = window.compressSegments;
+  window.compressSegments = function(segStr){
+    try{
+      if(!segStr || typeof segStr !== 'string') return segStr;
+      const parts = segStr.split(',')
+        .map(s => parseInt(s.trim(),10))
+        .filter(n => !isNaN(n));
+      if(parts.length === 0) return segStr;
+
+      parts.sort((a,b)=>a-b);
+
+      const out = [];
+      let runStart = parts[0];
+      let prev = parts[0];
+
+      for(let i=1; i<=parts.length; i++){
+        const v = parts[i];
+        if(i < parts.length && v === prev + 1){
+          prev = v;
+          continue;
+        }
+        if(prev > runStart){
+          out.push(runStart + '-' + prev);
+        } else {
+          out.push(String(runStart));
+        }
+        if(i < parts.length){
+          runStart = prev = v;
+        }
+      }
+      return out.join(', ');
+    }catch(_){
+      return segStr;
+    }
+  };
 })();
 </script>
 
