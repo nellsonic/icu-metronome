@@ -3809,7 +3809,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
 
 
-<!-- Full Volume toggle: iPad/WebKit-safe absolute restore + de-dupe (+ iPad boost) -->
+
+<!-- Full Volume toggle: iPad/WebKit-safe absolute restore + de-dupe with platform boosts -->
 <script>
 (function () {
   const onReady = (fn) => (document.readyState === "loading"
@@ -3820,23 +3821,10 @@ document.addEventListener('DOMContentLoaded', function(){
     const cb = document.querySelector("#allowFullVolume");
     if (!cb) return;
 
-    // Detect iOS/iPadOS
-    const ua = navigator.userAgent || "";
-    const isIOS =
-      /iPad|iPhone|iPod/.test(ua) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-    // Extra headroom only on iOS/iPadOS (WebKit-based)
-    // ~+3 dB perceived boost (adjustable)
-    const FULL_VOL_TARGET = isIOS ? 1.4 : 1.0;
-
-    // Try to find existing globals used by the app
     const audioCtx = window.audioCtx || window.ctx || window.audioContext || null;
     const masterGain = window.masterGain || window.mainGain || window.masterGainNode || null;
-
     if (!audioCtx || !masterGain || !masterGain.gain) return;
 
-    // Capture baseline once, after context is running
     if (typeof window.__baselineGain === "undefined" || window.__baselineGain === null) {
       const capture = () => {
         if (audioCtx.state === "running") {
@@ -3850,10 +3838,15 @@ document.addEventListener('DOMContentLoaded', function(){
       audioCtx.addEventListener?.("statechange", capture);
     }
 
-    // De-duplicate state changes (avoid touch->click double fire on iPad)
-    if (!window.__lastFullVolState && window.__lastFullVolState !== false) {
-      window.__lastFullVolState = cb.checked;
-    }
+    if (!window.__lastFullVolState) window.__lastFullVolState = cb.checked;
+
+    // Detect iPad/iOS platform
+    const ua = navigator.userAgent || "";
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || 
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    // Target multipliers
+    const FULL_VOL_TARGET = isIOS ? 1.8 : 1.2;
 
     function setAllowFullVolume(enabled) {
       if (enabled === window.__lastFullVolState) return;
@@ -3870,7 +3863,7 @@ document.addEventListener('DOMContentLoaded', function(){
           masterGain.gain.setValueAtTime(baseline, t);
           masterGain.gain.linearRampToValueAtTime(FULL_VOL_TARGET, t + 0.005);
         } else {
-          masterGain.gain.setValueAtTime(masterGain.gain.value, t);
+          masterGain.gain.setValueAtTime(FULL_VOL_TARGET, t);
           masterGain.gain.linearRampToValueAtTime(baseline, t + 0.005);
         }
       } catch (e) {
@@ -3880,26 +3873,26 @@ document.addEventListener('DOMContentLoaded', function(){
 
     window.__lastFullVolState = cb.checked;
 
-    // Replace node to wipe any prior handlers, then bind fresh pointer/click logic
-    cb.replaceWith(cb.cloneNode(true));
-    const fresh = document.querySelector("#allowFullVolume");
     const onPointer = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      setAllowFullVolume(fresh.checked);
+      setAllowFullVolume(cb.checked);
     };
     const onClickBlock = (e) => {
       e.preventDefault();
       e.stopPropagation();
       return false;
     };
+
+    cb.replaceWith(cb.cloneNode(true));
+    const fresh = document.querySelector("#allowFullVolume");
     fresh.addEventListener("pointerup", onPointer, { passive: false });
     fresh.addEventListener("click", onClickBlock, { passive: false });
 
-    // Expose API if other parts want to flip it programmatically
     window.__setAllowFullVolume = setAllowFullVolume;
   });
 })();
 </script>
+
 </body>
 </html>
