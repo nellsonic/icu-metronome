@@ -1976,7 +1976,7 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <input aria-label="Keep threshold linked to midpoint" checked="" id="silenceSubLinkMid" type="checkbox"/>
 <span>Link to midpoint</span>
 </label></div></div>
-<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="towardsCenter" type="checkbox"/> Build TOWARDS the Center</label><label style="white-space:nowrap; margin-left:12px;"><input id="fromCenter" type="checkbox"/> Build FROM the Center</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
+<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="towardsCenter" type="checkbox"/> Build Towards the Center</label><label style="white-space:nowrap; margin-left:12px;"><input id="fromCenter" type="checkbox"/> Build FROM the Center</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="allowFullVolume" type="checkbox"/><span class="voltext">Allow full volume (louder clicks)</span><span class="volwarn">USE WITH CAUTION - NO HEADPHONES!</span></label>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px"><span>Theme:</span> <select id="theme">
 <option value="dark">Dark</option><option value="light">Light</option><option value="blue">Blue</option><option value="yellow">Yellow</option><option value="green">Green</option><option value="red">Red</option>
@@ -3943,89 +3943,130 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 
-<!-- ICU iOS Audio Guard v7 (safe, additive) -->
+<!-- ICU iPad/WebAudio Resilience Patch v2: minimal, self-contained -->
+<style>
+#icu-audio-repair-btn{
+  position:fixed; right:12px; bottom:12px; z-index:99999;
+  font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  padding:10px 12px; border-radius:12px; border:none; box-shadow:0 4px 10px rgba(0,0,0,.25);
+  background:#ffd54d; color:#000; display:none; cursor:pointer;
+}
+#icu-audio-repair-btn:active{ transform: translateY(1px); }
+</style>
+<button id="icu-audio-repair-btn" type="button" aria-live="polite" aria-label="Repair sound">🔊 Tap to restore sound</button>
 <script>
-(function(){
-  // iOS detection (includes iPadOS on Mac with touch)
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent||'') ||
-                ((navigator.platform||'') === 'MacIntel' && (navigator.maxTouchPoints||0) > 1);
-  if (!isIOS) return; // desktop: no-op
+(() => {
+  // Guard against double-install
+  if (window.__icuAudioPatchInstalled__) return;
+  window.__icuAudioPatchInstalled__ = true;
 
-  let userIntent = false;
-  let pill;
-  function ensurePill(){
-    if (pill) return pill;
-    pill = document.createElement('button');
-    pill.id = 'icu-audio-repair-btn';
-    pill.type = 'button';
-    pill.textContent = '🔊 Tap to restore sound';
-    pill.setAttribute('aria-live','polite');
-    pill.setAttribute('aria-label','Repair sound');
-    Object.assign(pill.style, {
-      position:'fixed', right:'12px', bottom:'12px', zIndex: 2147483647,
-      font:'600 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-      padding:'10px 12px', borderRadius:'12px', border:'none',
-      boxShadow:'0 6px 16px rgba(0,0,0,.25)', background:'#ffd54d', color:'#000',
-      display:'none', cursor:'pointer'
-    });
-    pill.addEventListener('click', function(){
-      // Inside gesture: (re)create and resume the app's audio graph
-      try { if (typeof ensureAudio === 'function') ensureAudio(); } catch(_){}
-      try { if (window.audioCtx && audioCtx.state !== 'running' && audioCtx.resume) audioCtx.resume(); } catch(_){}
-      try { if (typeof setEffectiveGainFromSlider === 'function') setEffectiveGainFromSlider(); } catch(_){}
-      updatePill();
-    }, {passive:true});
-    document.body.appendChild(pill);
-    return pill;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+  let audioUnlocked = false;
+  let lastProbe = 0;
+  let probeTimer = null;
+  let userInteractedOnce = false;
+  let allowRepairUI = false;
+
+  function getAudioCtx(){
+    if (!audioCtx || audioCtx.state === 'closed'){
+      try {
+        audioCtx = new Ctx({latencyHint:'interactive'});
+        audioCtx.onstatechange = () => {
+          console.log('[ICU Audio] state:', audioCtx.state);
+          updateRepairUI();
+        };
+      } catch(e){ console.warn('[ICU Audio] cannot create context', e); }
+    }
+    return audioCtx;
   }
 
-  function updatePill(){
-    const p = ensurePill();
+  async function unlockAudio(reason=''){
+    const ctx = getAudioCtx();
+    try { await ctx.resume(); } catch(e){}
+    // Play a very short silent probe to bind output route
     try {
-      const need = !!(window.audioCtx ? (audioCtx.state !== 'running') : true);
-      p.style.display = (userIntent && need) ? 'inline-block' : 'none';
-    } catch(e){
-      p.style.display = userIntent ? 'inline-block' : 'none';
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 128, ctx.sampleRate);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.00001, ctx.currentTime);
+      src.connect(gain).connect(ctx.destination);
+      src.start();
+      src.stop(ctx.currentTime + 0.005);
+    } catch(e){}
+    audioUnlocked = (ctx.state === 'running');
+    updateRepairUI();
+    window.dispatchEvent(new CustomEvent('icu-audio-unlock', { detail: { reason } }));
+  }
+
+  function updateRepairUI(){
+    const btn = document.getElementById('icu-audio-repair-btn');
+    const ctx = getAudioCtx();
+    // Show button only after a clear signal that audio is needed (user gesture or page return)
+    if (allowRepairUI && (!ctx || ctx.state !== 'running')){
+      btn.style.display = 'inline-block';
+    } else {
+      btn.style.display = 'none';
     }
   }
 
-  function tryResume(reason){
-    try { if (typeof ensureAudio === 'function') ensureAudio(); } catch(_){}
-    try { if (window.audioCtx && audioCtx.state !== 'running' && audioCtx.resume) audioCtx.resume(); } catch(_){}
-    try { if (typeof setEffectiveGainFromSlider === 'function') setEffectiveGainFromSlider(); } catch(_){}
-    updatePill();
-  }
+  // Public helpers other code can call if needed
+  window.ICU_AUDIO = {
+    getAudioCtx, unlockAudio,
+    ensureRunning: () => unlockAudio('[ensureRunning]')
+  };
 
-  // After first gesture, we consider the user wants audio; from then on we can show the pill if needed.
-  ['pointerdown','touchstart','mousedown','keydown','click'].forEach(function(evt){
-    window.addEventListener(evt, function(){
-      userIntent = true;
-      tryResume('[first-gesture]');
-    }, { once:true, passive:true });
+  // UI button to fix sound on demand
+  const repairBtn = document.getElementById('icu-audio-repair-btn');
+  repairBtn.addEventListener('click', () => unlockAudio('[repair button]'), {passive:true});
+
+  // Unlock on first user gesture (covers iOS)
+  ['pointerdown','touchstart','touchend','mousedown','keydown'].forEach(evt => {
+    window.addEventListener(evt, () => { userInteractedOnce = true; allowRepairUI = true; unlockAudio('[user gesture]'); }, { once: true, passive: true });
   });
 
-  // On visibility/page return, quietly try to resume; allow the pill to appear if still suspended.
-  document.addEventListener('visibilitychange', function(){
-    if (!document.hidden) { userIntent = true; tryResume('[vis->visible]'); }
-  }, {passive:true});
+  // Try to resume after visibility/tab return
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      allowRepairUI = true; // coming back to foreground implies audio may be needed
+      unlockAudio('[visibilitychange->visible]');
+    }
+  });
 
-  window.addEventListener('pageshow', function(){
-    userIntent = true;
-    tryResume('[pageshow]');
-  }, {passive:true});
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      // Came back from bfcache; rebuild cleanly
+      if (audioCtx && audioCtx.state !== 'closed'){
+        try { audioCtx.close(); } catch(e){}
+      }
+      audioCtx = null;
+      allowRepairUI = true; // returning from bfcache
+    }
+    unlockAudio('[pageshow]');
+  });
 
-  // Watchdog while visible
-  setInterval(function(){
-    if (document.visibilityState !== 'visible') return;
-    try {
-      if (window.audioCtx && audioCtx.state !== 'running') tryResume('[watchdog]');
-    } catch(_){}
-    updatePill();
-  }, 1200);
+  // Watchdog probe: if scheduler thinks it is running but iOS has suspended audio,
+  // resume gently. We can't observe speaker output, so we check context state.
+  function startProbe(){
+    if (probeTimer) return;
+    probeTimer = setInterval(() => {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      // If suspended for > 1s while page visible, try to resume
+      if (document.visibilityState === 'visible' && ctx.state !== 'running'){
+        unlockAudio('[watchdog]');
+      }
+      // Also re-check UI
+      updateRepairUI();
+    }, 1200);
+  }
+  startProbe();
 
-  // Initial state
-  document.addEventListener('DOMContentLoaded', updatePill, {once:true});
+  // Initial paint
+  getAudioCtx();
+  updateRepairUI();
 })();
 </script>
+
 </body>
 </html>
