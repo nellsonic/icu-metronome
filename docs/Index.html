@@ -1976,7 +1976,7 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <input aria-label="Keep threshold linked to midpoint" checked="" id="silenceSubLinkMid" type="checkbox"/>
 <span>Link to midpoint</span>
 </label></div></div>
-<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="towardsCenter" type="checkbox"/> Build Towards the Center</label><label style="white-space:nowrap; margin-left:12px;"><input id="fromCenter" type="checkbox"/> Build FROM the Center</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
+<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="towardsCenter" type="checkbox"/> Build TOWARDS the Center</label><label style="white-space:nowrap; margin-left:12px;"><input id="fromCenter" type="checkbox"/> Build FROM the Center</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="allowFullVolume" type="checkbox"/><span class="voltext">Allow full volume (louder clicks)</span><span class="volwarn">USE WITH CAUTION - NO HEADPHONES!</span></label>
 <label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px"><span>Theme:</span> <select id="theme">
 <option value="dark">Dark</option><option value="light">Light</option><option value="blue">Blue</option><option value="yellow">Yellow</option><option value="green">Green</option><option value="red">Red</option>
@@ -3967,6 +3967,12 @@ document.addEventListener('DOMContentLoaded', function(){
   let probeTimer = null;
   let userInteractedOnce = false;
   let allowRepairUI = false;
+  const isProbablyIOS = (() => {
+    const ua = navigator.userAgent || '';
+    const plat = navigator.platform || '';
+    const touch = navigator.maxTouchPoints || 0;
+    return /iPad|iPhone|iPod/.test(ua) || (plat === 'MacIntel' && touch > 1);
+  })();
 
   function getAudioCtx(){
     if (!audioCtx || audioCtx.state === 'closed'){
@@ -4021,7 +4027,7 @@ document.addEventListener('DOMContentLoaded', function(){
   repairBtn.addEventListener('click', () => unlockAudio('[repair button]'), {passive:true});
 
   // Unlock on first user gesture (covers iOS)
-  ['pointerdown','touchstart','touchend','mousedown','keydown'].forEach(evt => {
+  ['pointerdown','touchstart','touchend','mousedown','keydown','click'].forEach(evt => {
     window.addEventListener(evt, () => { userInteractedOnce = true; allowRepairUI = true; unlockAudio('[user gesture]'); }, { once: true, passive: true });
   });
 
@@ -4063,10 +4069,24 @@ document.addEventListener('DOMContentLoaded', function(){
   startProbe();
 
   // Initial paint
+  if (isProbablyIOS) { allowRepairUI = true; }
   getAudioCtx();
   updateRepairUI();
 })();
 </script>
 
+
+<script>
+// Ensure audio is resumed when user clicks a Start-like button
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const txt = (t.innerText || t.value || '').trim().toLowerCase();
+  if (txt === 'start' || txt === 'start/stop' || txt === 'play' || txt === '▶' || txt === '▶ start') {
+    if (window.ICU_AUDIO && window.ICU_AUDIO.ensureRunning) {
+      window.ICU_AUDIO.ensureRunning();
+    }
+  }
+}, { capture: true });
+</script>
 </body>
 </html>
