@@ -11,7 +11,7 @@ A metronome app that helps musicians progressively step up the tempo of all the 
 1. Set **Start Tempo**, **Target Tempo**, **Step Size** (metronome increment), and **Cycles** (how many segments you wish to work at once).
 2. Adjust **Subdivision** and **Volume**, if desired.
 3. Press **Generate** → then **Start**.
-4. Use arrow keys to navigate (↑/↓ step, ←/→ cycle).  
+4. Use arrow keys to navigate (**↑/↓** = step, **Shift + ←/→** = cycle).  
    *(Keyboard legend hidden on small screens.)*
 
 ## Controls
@@ -25,3 +25,15 @@ A metronome app that helps musicians progressively step up the tempo of all the 
 - **Backwards mode**: If checked, cycles start from the final segment and add in reverse.
 - **Silence subdivisions above**: Mutes subdivision clicks once the tempo passes the selected threshold, leaving only the main beats. This provides more rhythmic support at slower tempos versus more clarity at faster ones.
 - **Link to midpoint**: Sets the silence subdivisions threshold to exactly halfway between the current Start and Target tempos. If Start or Target tempos are changed, the silence point updates automatically to remain centered between them. While checked, any manual change to the 'Silence subdivisions above' value is disabled.
+- **Keyboard navigation**:  
+  - **↑ / ↓** — Move between steps within a cycle  
+  - **Shift + ← / →** — Move between cycles  
+  - **Spacebar** — Start/Stop playback
+
+---
+
+## Updates  
+**2025-11-07**  
+- **Cycle navigation:** Advancing to the next or previous cycle now requires holding the **Shift** key while using the arrow keys (Shift + → / ←). This prevents accidentally switching cycles when intending to move between steps.  
+- **Tempo safeguards:** The **Target Tempo** can no longer be set lower than the **Start Tempo**, preventing unexpected behavior.  
+- **Spacebar control:** The **Spacebar** now reliably starts and stops the metronome playback.

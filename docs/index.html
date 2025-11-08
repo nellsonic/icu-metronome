@@ -1916,6 +1916,82 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
     opacity: 0.7;
   }
 </style>
+
+
+
+<style>
+/* Keycap styling for keyboard legends — tuned contrast & spacing */
+.keyLegend ul,
+#legendMobile ul,
+#legendMobileStatic ul{
+  list-style:none;
+  margin:8px 0 0 0;
+  padding:0;
+  line-height:1.65;       /* more vertical space so borders never touch */
+}
+.keyLegend li,
+#legendMobile li,
+#legendMobileStatic li{
+  margin:6px 0;           /* extra gap between rows */
+}
+
+/* Shared keycap props */
+.keyLegend kbd,
+#legendMobile kbd,
+#legendMobileStatic kbd{
+  display:inline-block;
+  padding:3px 7px;        /* slightly softer padding */
+  border-radius:6px;
+  font-weight:600;
+  line-height:1.1;
+  vertical-align:middle;
+  background: transparent; /* default fallback if media queries don't match */
+}
+
+/* Dark theme: softer, clear borders & tint */
+@media (prefers-color-scheme: dark){
+  .keyLegend kbd,
+  #legendMobile kbd,
+  #legendMobileStatic kbd{
+    border:1.25px solid rgba(255,255,255,0.65);
+    background: rgba(255,255,255,0.06);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset;
+    color: inherit;
+  }
+}
+
+/* Light theme: analogous balance */
+@media (prefers-color-scheme: light){
+  .keyLegend kbd,
+  #legendMobile kbd,
+  #legendMobileStatic kbd{
+    border:1.25px solid rgba(0,0,0,0.7);
+    background: rgba(0,0,0,0.03);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset;
+    color: inherit;
+  }
+}
+
+/* Separators with comfortable spacing */
+.keyLegend .slash, .keyLegend .plus,
+#legendMobile .slash, #legendMobile .plus,
+#legendMobileStatic .slash, #legendMobileStatic .plus{
+  display:inline-block;
+  padding: 0 6px;
+  opacity: .9;
+  font-weight:600;
+}
+
+/* Subtle press effect (optional) */
+.keyLegend kbd:active,
+#legendMobile kbd:active,
+#legendMobileStatic kbd:active{
+  transform: translateY(1px);
+}
+</style>
+
+
+
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
@@ -1966,7 +2042,12 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <button class="btn ghost" id="save">Save Defaults</button>
 <button class="btn ghost" id="reset">Reset Defaults</button>
 <button aria-pressed="false" class="btn acc" id="startStopBtn">Start</button>
-</div><div class="keyLegend"><div><u>Keyboard shortcuts</u></div><ul style="list-style:none; margin:8px 0 0 0; padding:0;"><li style="margin:4px 0;; list-style:none"><code>Space</code> = Start / Stop</li><li style="margin:4px 0;; list-style:none"><code>←</code> / <code>→</code> = Prev / Next Cycle</li><li style="margin:4px 0;; list-style:none"><code>↑</code> / <code>↓</code> = Prev / Next Step</li></ul></div></div>
+</div><div class="keyLegend"><div><u>Keyboard shortcuts</u></div>
+  <ul style="list-style:none;margin:8px 0 0 0;padding:0;line-height:1.45;">
+    <li><code>Space</code>&emsp;=&emsp;Start / Stop</li>
+    <li><code>Shift + ←</code>&emsp;/&emsp;<code>Shift + →</code>&emsp;=&emsp;Prev / Next Cycle</li>
+    <li><code>↑</code>&emsp;/&emsp;<code>↓</code>&emsp;=&emsp;Prev / Next Step</li>
+  </ul></div></div>
 <div class="opts-inline" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><div class="silence-row"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-grid; grid-template-columns:auto 1fr; align-items:center; gap:6px;">
 <input aria-controls="silenceSubAbove" aria-label="Enable silencing subdivisions above BPM" id="silenceSubToggle" type="checkbox"/>
 <span>Silence subdivisions above</span>
@@ -2014,7 +2095,7 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <div class="legendMobile" id="legendMobileStatic"><div><u>Keyboard shortcuts</u></div>
 <ul style="list-style:none; margin:8px 0 0 0; padding:0;">
 <li style="margin:4px 0;; list-style:none"><code>Space</code> = Start / Stop</li>
-<li style="margin:4px 0;; list-style:none"><code>←</code> / <code>→</code> = Prev / Next Cycle</li>
+<li style="margin:4px 0;; list-style:none"><code>Shift</code> + <code>←</code> / <code>Shift</code> + <code>→</code> = Prev / Next Cycle</li>
 <li style="margin:4px 0;; list-style:none"><code>↑</code> / <code>↓</code> = Prev / Next Step</li>
 </ul></div>
 <div class="linksFoot" id="resourcesLinks"><span>Resource Links:</span>
@@ -2806,8 +2887,8 @@ function keyNav(e){
 
   if (e.key === 'ArrowDown'){ e.preventDefault(); nextStep(); }
   else if (e.key === 'ArrowUp'){ e.preventDefault(); prevStep(); }
-  else if (e.key === 'ArrowLeft'){ e.preventDefault(); prevCycle(); }
-  else if (e.key === 'ArrowRight'){ e.preventDefault(); nextCycle(); }
+  else if (e.key === 'ArrowLeft') { if (!e.shiftKey) { e.preventDefault(); return; } e.preventDefault(); prevCycle(); }
+  else if (e.key === 'ArrowRight') { if (!e.shiftKey) { e.preventDefault(); return; } e.preventDefault(); nextCycle(); }
 }
 
 window.addEventListener('load', ()=>{ loadSettings(); applyTheme(); setEffectiveGainFromSlider(); scrollToTopStrong(); updateStartStopUI(); 
@@ -4065,6 +4146,139 @@ document.addEventListener('DOMContentLoaded', function(){
   // Initial paint
   getAudioCtx();
   updateRepairUI();
+})();
+</script>
+
+
+
+<script>
+(function(){
+  function toKeycap(text){
+    const k = document.createElement('kbd');
+    k.textContent = text.trim();
+    return k;
+  }
+  function insertSep(cls, sym){
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = sym;
+    return s;
+  }
+  function upgrade(container){
+    if (!container) return;
+    // 1) Convert any <code> to <kbd>
+    container.querySelectorAll('code').forEach(code => {
+      const k = toKeycap(code.textContent);
+      code.replaceWith(k);
+    });
+    // 2) Split composite keys inside <kbd> (e.g., "Shift + ←") into multiple <kbd> with separators
+    container.querySelectorAll('kbd').forEach(k => {
+      const txt = k.textContent;
+      if (!/[+]/.test(txt)) return; // only split if "+" present
+      const parent = k.parentNode;
+      if (!parent) return;
+      const parts = txt.split('+').map(s => s.trim()).filter(Boolean);
+      const frag = document.createDocumentFragment();
+      parts.forEach((p, i) => {
+        frag.appendChild(toKeycap(p));
+        if (i < parts.length - 1) frag.appendChild(insertSep('plus', '+'));
+      });
+      parent.replaceChild(frag, k);
+    });
+    // 3) Replace plain text slashes between tokens with spaced separators
+    container.querySelectorAll('li').forEach(li => {
+      // Walk text nodes only; leave existing elements alone
+      const nodes = Array.from(li.childNodes);
+      nodes.forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE && node.nodeValue.includes('/')){
+          const parts = node.nodeValue.split('/');
+          const frag = document.createDocumentFragment();
+          parts.forEach((p, idx) => {
+            if (p) frag.appendChild(document.createTextNode(p));
+            if (idx < parts.length - 1) frag.appendChild(insertSep('slash', '/'));
+          });
+          li.replaceChild(frag, node);
+        }
+      });
+    });
+  }
+  function init(){
+    upgrade(document.querySelector('.keyLegend'));
+    upgrade(document.getElementById('legendMobile'));
+    upgrade(document.getElementById('legendMobileStatic'));
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+
+
+<style>
+/* Inline "Last updated" next to the title */
+.updateInline{
+  font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  margin-left: 12px;
+  white-space: nowrap;
+  color: var(--muted, #888);
+}
+.updateInline a{ color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 540px){
+  .updateInline{ display:block; margin:6px 0 0 0; white-space:normal; }
+}
+</style>
+<script>
+(function(){
+  // Create the inline banner next to the first <h1> we can find
+  function insertInline(){
+    const h1 = document.querySelector('h1');
+    if(!h1) return;
+    // Avoid duplicates
+    if (h1.querySelector('.updateInline')) return;
+    const span = document.createElement('span');
+    span.className = 'updateInline';
+    span.innerHTML = 'Last updated: <span id="lastUpdatedInlineDate">loading…</span> — <a rel="noopener noreferrer" target="_blank" href="https://nellsonic.github.io/icu-metronome/features.html">See Features Guide</a> for details';
+    h1.appendChild(span);
+  }
+
+  async function fetchCommitDate(repo, path){
+    const url = `https://api.github.com/repos/${repo}/commits?path=${encodeURIComponent(path)}&sha=main&per_page=1`;
+    const r = await fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (Array.isArray(data) && data.length && data[0].commit && data[0].commit.committer){
+      return new Date(data[0].commit.committer.date);
+    }
+    throw new Error('No commit data');
+  }
+
+  function fmt(d){
+    try{
+      return d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) +
+             ' ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+    }catch(_){
+      return d.toISOString();
+    }
+  }
+
+  async function init(){
+    insertInline();
+    const el = document.getElementById('lastUpdatedInlineDate');
+    if(!el) return;
+    try{
+      const d = await fetchCommitDate('nellsonic/icu-metronome', 'docs/index.html');
+      el.textContent = fmt(d);
+    }catch(e){
+      try{
+        const d2 = new Date(document.lastModified);
+        if (isFinite(d2)) { el.textContent = fmt(d2) + ' (local)'; return; }
+      }catch(_){}
+      el.textContent = 'unavailable';
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
 </script>
 
