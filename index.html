@@ -1,0 +1,4296 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<!-- ICU: robust saved-cycle bootstrap -->
+<script>
+(function(){
+  function getCookie(name){
+    try{
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[-[\]/{}()*+?.\^$|]/g, '\$&') + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }catch(_){ return null; }
+  }
+  function desiredCycle(){
+    try{
+      if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
+        const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
+        if (s && s.resumeCycle != null){
+          const c = parseInt(s.resumeCycle,10);
+          if (c >= 1) return c;
+        }
+      }
+    }catch(_){}
+    try{
+      const v = localStorage.getItem('icu.lastCycle');
+      if (v && !isNaN(parseInt(v,10))) return parseInt(v,10);
+    }catch(_){}
+    try{
+      const raw = localStorage.getItem('icu.lastPos');
+      if (raw){
+        const obj = JSON.parse(raw);
+        if (Number.isInteger(obj?.cycle) && obj.cycle >= 1) return obj.cycle;
+      }
+    }catch(_){}
+    try{
+      const raw = getCookie('icu_resume_v3');
+      if (raw){
+        const j = JSON.parse(raw);
+        if (Number.isInteger(j?.cycle) && j.cycle >= 1) return j.cycle;
+      }
+    }catch(_){}
+    return null;
+  }
+  window.__icuDesiredCycle = desiredCycle();
+
+  // Expose persister
+  window.__icuPersistCycle = function(c){
+    try{
+      if (!(c >= 1)) return;
+      localStorage.setItem('icu.lastCycle', String(c));
+      try{
+        const raw = localStorage.getItem('icu.lastPos');
+        let pos = {cycle:c, step:null};
+        if (raw){ try{ const o = JSON.parse(raw); pos.step = o.step ?? null; }catch(_){ } }
+        localStorage.setItem('icu.lastPos', JSON.stringify(pos));
+      }catch(_){}
+      try{
+        if (typeof window.STORE_KEY !== 'undefined' && window.STORE_KEY){
+          const s = JSON.parse(localStorage.getItem(window.STORE_KEY)||"{}");
+          s.resumeCycle = c;
+          localStorage.setItem(window.STORE_KEY, JSON.stringify(s));
+        }
+      }catch(_){}
+      try{
+        document.cookie = 'icu_resume_v3=' + encodeURIComponent(JSON.stringify({cycle:c})) + '; path=/; max-age='+(365*86400);
+      }catch(_){}
+    }catch(_){}
+  };
+})();
+</script>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Interleaved Clicking Up Metronome</title>
+<style>
+#tbl{touch-action: pan-y;}
+
+  :root{--bg:#0f1117; --panel:#151926; --text:#e7ecf3; --muted:#a3adbd; --line:#232a3c; --field:#0e1322; --accent:#7bdcff; --good:#75e39a; --current:#27314f;}
+  body.light{--bg:#f6f7fb; --panel:#ffffff; --text:#0f172a; --muted:#475569; --line:#e2e8f0; --field:#ffffff; --accent:#0077ff; --good:#0ea5e9; --current:#e8f1ff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif; transition: background .25s, color .25s; overflow-x:hidden}
+  h1{margin:0;padding:16px 16px 0;font-weight:800;font-size:28px;letter-spacing:.2px;color:var(--text)}
+  .wrap{display:grid;grid-template-columns:2fr 1fr;gap:16px;padding:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.1)}
+  .bd{padding:12px 14px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+  input,select,button{width:100%;color:var(--text);background:var(--field);border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none}
+  select{appearance:none;-webkit-appearance:none;-moz-appearance:none}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .btns{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .btn{cursor:pointer;font-weight:600}
+  .btn.acc{background:linear-gradient(135deg, color-mix(in oklab, var(--accent) 70%, #fff), var(--accent));color:#06101b;border:none}
+  .btn.ghost{background:var(--field);border:1px solid var(--line)}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px;font-size:13px;cursor:pointer}
+  th,td{padding:8px 10px;text-align:left}
+  thead th{position:sticky;top:0;background:var(--panel);z-index:1;color:var(--muted)}
+  tbody tr{background:var(--panel);border:1px solid var(--line)}
+  tbody tr.current{outline:2px solid var(--accent);background:var(--current)}
+  
+  .cyclepill{padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:color-mix(in oklab, var(--panel) 92%, var(--accent) 8%)}
+  /* Pulse */
+  .pulse-wrap{position:fixed;left:50%;top:24px;transform:translateX(-50%);pointer-events:none;z-index:9999}
+  .pulse-dot{width:18px;height:18px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 color-mix(in oklab, var(--accent) 55%, transparent);opacity:0.0;margin:auto}
+  .pulse-dot.boom{animation:pulse 320ms ease-out 1}
+  @keyframes pulse{
+    0%   {transform:scale(1); box-shadow:0 0 0 0 color-mix(in oklab, var(--accent) 55%, transparent); opacity:0.0;}
+    10%  {opacity:1;}
+    60%  {transform:scale(2.4); box-shadow:0 0 0 16px color-mix(in oklab, var(--accent) 15%, transparent); opacity:1;}
+    100% {transform:scale(3.0); box-shadow:0 0 0 22px color-mix(in oklab, var(--accent) 5%, transparent); opacity:0;}
+  }
+  /* Volume slider edge-to-edge */
+  input[type="range"].volrange{appearance:none;-webkit-appearance:none;width:100%;margin:0;padding:0;background:transparent;height:24px}
+  input[type="range"].volrange:focus{outline:none}
+  input[type="range"].volrange::-webkit-slider-runnable-track{height:6px;background:var(--line);border-radius:4px;border:none;margin:0}
+  input[type="range"].volrange::-moz-range-track{height:6px;background:var(--line);border-radius:4px;border:none;margin:0}
+  input[type="range"].volrange::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);border:none;margin-top:-4px}
+  input[type="range"].volrange::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:none}
+
+/* tighten options row to fit three checkboxes on one line */
+
+
+
+
+#cycleLabel { display:inline-block; text-align:center; width:100%; }
+
+
+/* Tighter table layout: no extra stretch before tempo column */
+#tbl{ width:auto; }
+#tbl th:nth-child(1), #tbl td:nth-child(1){ width:56px; }           /* step */
+#tbl th:nth-child(3), #tbl td:nth-child(3){ width:80px; text-align:right; } /* tempo */
+#tbl td:nth-child(3){ padding-left:6px; } /* reduce space before tempo */
+
+/* Checkbox row: keep boxes close to their labels, but increase space between groups */
+
+
+
+
+@media (max-width: 700px){
+  .wrap{
+    display:grid;
+    grid-template-columns: 1fr 1fr; /* keep two panels side by side */
+    gap:12px;
+    padding:12px;
+    overflow-x:hidden; /* no horizontal scroll */
+  }
+}
+/* Buttons + legend split */
+.btnsRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;margin-top:10px}
+.btnsRow .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btnsRow .keyLegend{font-size:12px;color:var(--muted);line-height:1.35}
+.btnsRow .keyLegend code{background:var(--field);border:1px solid var(--line);padding:2px 6px;border-radius:6px}
+@media (max-width: 760px){
+  .btnsRow{grid-template-columns:1fr}
+}
+
+/* Bold legend title and make Generate span full row */
+.btnsRow .keyLegend > div{ font-weight:700; }
+.btnsRow .btns button:first-child{ grid-column:1 / -1; }
+
+/* Evenly distribute the three checkbox groups across the panel */
+.opts-inline{justify-content:space-between !important;width:100%}
+
+
+/* Center the legend content under its column */
+.btnsRow .keyLegend{text-align:center;justify-self:center}
+
+/* 1) Center the table in the second panel */
+
+.card:nth-of-type(2) table { margin: 0 auto; }
+
+/* 2) Move checkboxes closer to their text */
+ 
+
+/* Center only the table, keep other items full-width and above */
+.card:nth-of-type(2) .bd > div[style*="overflow:auto"] table{ margin-left:auto; margin-right:auto; }
+
+
+
+
+/* Stack cycle controls: buttons row, pill below */
+.cyclebar{display:flex;flex-direction:column !important;align-items:center !important;gap:8px}
+.cyclebar .left{display:flex;gap:10px;justify-content:center;width:100%}
+.cyclebar .right{width:100%;text-align:center}
+
+/* Uniform checkbox spacing */
+
+
+
+/* Keep equal, tight spacing between checkbox and its text, even when text wraps */
+
+
+
+/* Force ultra-tight, uniform spacing that overrides inline styles */
+.opts-inline label{
+  display:inline-grid !important;
+  grid-auto-flow:column;
+  grid-template-columns:auto 1fr;
+  align-items:flex-start !important;
+  gap:2px !important; /* ~50% tighter */
+  line-height:1.22;
+}
+.opts-inline input[type="checkbox"]{
+  margin:0 !important;
+  margin-top:1px !important; /* subtle optical align */
+}
+
+
+/* Resources footer links */
+.linksFoot{
+  margin-top:10px;
+  font-size:12px;
+  color:var(--muted);
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+.linksFoot a{
+  color:var(--accent);
+  text-decoration:none;
+  border-bottom:1px dotted color-mix(in oklab, var(--accent) 60%, transparent);
+}
+.linksFoot a:hover{ text-decoration:underline; }
+.linksFoot .sep{ color:var(--muted); }
+@media (max-width: 700px){
+  .linksFoot{ font-size:12px; }
+}
+</style>
+<style>
+/* Remove bullets from keyboard legend */
+.keyLegend ul, .keyLegend li { list-style: none !important; padding-left: 0 !important; margin-left: 0 !important; }
+
+/* Hide Save/Reset buttons per user request */
+#save, #reset { display: none !important; }
+
+/* --- Mobile tweaks: prevent squish on narrow screens --- */
+@media (max-width: 700px){
+  /* Stack form rows vertically */
+  .row{ grid-template-columns: 1fr !important; gap:10px }
+  /* Make options list stack and fill width */
+  .opts-inline{ flex-direction: column !important; align-items: stretch !important; gap:8px !important }
+  .opts-inline label{ width:100% }
+  /* Keep nav buttons readable and wrapping */
+  .cyclebar .left{ flex-wrap: wrap; justify-content: center }
+  .btnsRow{ grid-template-columns: 1fr; }
+  .btnsRow .btns{ grid-template-columns: 1fr 1fr; gap:10px }
+  /* Give inputs a bit more tappable area */
+  input, select, button{ padding:12px 14px }
+  /* Ensure the table area remains usable but not too tall on tiny screens */
+  .card .bd > div[style*="overflow:auto"]{ max-height: 52vh !important }
+}
+/* Slightly larger breakpoint for very narrow phones */
+@media (max-width: 380px){
+  .btnsRow .btns{ grid-template-columns: 1fr; }
+}
+/* --- end mobile tweaks --- */
+
+
+/* Prevent extreme squish by letting the grid be wider than viewport if needed */
+.wrap{}
+@media (min-width: 701px){ .wrap{} }
+
+
+/* --- Mobile (no horizontal scroll, keep side-by-side) --- */
+@media (max-width: 700px){
+  /* Stack controls within the left card to use vertical space instead of width */
+  .row{ grid-template-columns: 1fr !important; gap:8px }
+  /* Make the volume row full width (already applied) */
+  /* Options stack vertically and fill width */
+  .opts-inline{ flex-direction: column !important; align-items: stretch !important; gap:6px !important }
+  .opts-inline label{ width:100% }
+  /* Buttons wrap neatly */
+  .cyclebar .left{ flex-wrap: wrap; justify-content: center; gap:8px }
+  .btnsRow{ grid-template-columns: 1fr; }
+  .btnsRow .btns{ grid-template-columns: 1fr; gap:8px }
+  /* Slightly reduce padding and font sizes to fit */
+  .bd{ padding:10px }
+  h1{ font-size:22px }
+  input, select, button{ padding:10px 12px; font-size:14px }
+  .keyLegend{ font-size:11px }
+  table{ font-size:12px; width:100% }
+  #tbl th:nth-child(1), #tbl td:nth-child(1){ width:44px; }
+  #tbl th:nth-child(3), #tbl td:nth-child(3){ width:64px; }
+  .card .bd > div[style*="overflow:auto"]{ max-height: 54vh !important }
+}
+/* --- end mobile (no horizontal scroll) --- */
+
+
+/* --- Compact 2-row layout for right-panel nav on small screens --- */
+@media (max-width: 700px){
+  .cyclebar{
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+  /* Collapse wrappers so all four buttons can pack into the grid */
+  .cyclebar .left{ display: contents !important; }
+  /* Remove the inline margin on the second wrapper */
+  .cyclebar .left[style]{ margin-top: 0 !important; }
+  /* Make each nav button fill its grid cell */
+  .cyclebar .left button{ width: 100%; }
+  /* Tighter buttons for small screens */
+  .cyclebar .left button.btn{ padding: 8px 10px; font-size: 13px; }
+  /* Keep the cycle pill full-width on its own row */
+  .cyclebar .right{ grid-column: 1 / -1; justify-self: center; }
+}
+/* --- end compact 2-row layout --- */
+
+
+/* Keyboard shortcuts: move to bottom of right panel on small screens */
+#legendMobile { display:none; }
+@media (max-width: 700px){
+  .keyLegend { display:none !important; }    /* hide original (left panel) */
+  #legendMobile { 
+    display:block !important; 
+    font-size:12px; 
+    color:var(--muted); 
+    line-height:1.35; 
+    margin-top:10px; 
+    text-align:center;
+  }
+  #legendMobile code{
+    background:var(--field);
+    border:1px solid var(--line);
+    padding:2px 6px;
+    border-radius:6px;
+  }
+}
+
+
+/* Mobile: show legend at bottom of right panel; hide desktop legend */
+#legendMobileStatic{ display:none; }
+@media (max-width: 700px){
+  .keyLegend{ display:none !important; }
+  #legendMobileStatic{
+    display:block !important;
+    font-size:12px;
+    color:var(--muted);
+    line-height:1.35;
+    margin-top:10px;
+    text-align:center;
+  }
+  #legendMobileStatic code{
+    background:var(--field);
+    border:1px solid var(--line);
+    padding:2px 6px;
+    border-radius:6px;
+  }
+}
+
+
+/* Hide legacy Save/Reset buttons */
+#save, #reset { display: none !important; }
+
+/* Make Start/Stop width match Generate (full grid width) */
+.btnsRow .btns #startStopBtn{ grid-column: 1 / -1; }
+
+#startStopBtn{ width:100%; }
+
+/* Resources footer links */
+.linksFoot{
+  margin-top:10px;
+  font-size:12px;
+  color:var(--muted);
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+.linksFoot a{
+  color:var(--accent);
+  text-decoration:none;
+  border-bottom:1px dotted color-mix(in oklab, var(--accent) 60%, transparent);
+}
+.linksFoot a:hover{ text-decoration:underline; }
+.linksFoot .sep{ color:var(--muted); }
+@media (max-width: 700px){
+  .linksFoot{ font-size:12px; }
+}
+
+
+/* Subheader under the main title */
+Lpx;
+  color: var(--muted);
+  letter-spacing: .2px;
+
+  text-align: center;
+}
+@media (max-width: 700px){
+  Kpx; 
+  text-align: center;
+}
+}
+
+</style>
+<style>
+/* Subheader tweak */
+.subheader{
+  padding: 4px 16px 8px;
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: .2px;
+  text-align: left;
+}
+@media (max-width: 700px){
+  .subheader{ font-size: 13px; text-align: center; }
+}
+</style>
+<style>
+/* Hide all legends on small screens */
+@media (max-width: 700px){
+  .keyLegend{ display:none !important; }
+  #legendMobileStatic{ display:none !important; }
+}
+</style>
+<style>
+/* --- Feedback popover styles --- */
+#resourcesLinks { position: relative;  overflow: visible; }
+#linkFeedback { text-decoration: underline; cursor: pointer; }
+.fb-pop { 
+  position: fixed; z-index: 100; margin-top: .25rem;
+  background: #111; color: #eee; border: 1px solid #2a2a2a; border-radius: .6rem;
+  padding: .35rem; display: flex; flex-direction: column; gap: .25rem;
+  min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+}
+.fb-pop[hidden] { display: none; }
+.fb-pop a, .fb-pop button { 
+  text-align: left; background: none; border: 0; padding: .45rem .55rem; 
+  color: #eee; cursor: pointer; border-radius: .5rem; font: inherit;
+}
+.fb-pop a:hover, .fb-pop button:hover { background: #1c1c1c; }
+.fb-copied { font-size: .85rem; opacity: .9; padding: .25rem .55rem; }
+</style>
+<style>
+/* -- Touch-friendly Step buttons on small screens -- */
+@media (max-width: 700px), (pointer: coarse) {
+  #prevStepBtn, #nextStepBtn {
+    min-height: 56px;             /* bigger tap target */
+    padding-block: 14px;          /* vertical padding */
+    padding-inline: 16px;         /* horizontal padding */
+    font-size: 1.05rem;           /* slightly larger text */
+    line-height: 1.1;
+    touch-action: manipulation;
+  }
+}
+
+/* === Brighten general text to match checkbox label brightness === */
+body { color: var(--text); }
+.card .bd, .wrap, .cyclebar, .opts, .opts-inline, .opts-inline label,
+#tbl, #tbl td, #tbl th, .bd p, .bd li, .bd label, .desc, .instructions {
+  color: var(--text) !important;
+}
+
+/* Keep keyboard legend and resource links muted */
+.keyLegend, .keyLegend * {
+  color: var(--muted) !important;
+}
+#resourceLinks, #resourceLinks *, .resourceLinks, .resourceLinks *,
+.resources, .resources * {
+  color: var(--muted) !important;
+}
+
+/* === Force bright text inside the step table === */
+#tbl, #tbl *, #tbl td, #tbl th {
+  color: var(--text) !important;
+}
+#tbl td, #tbl th {
+  opacity: 1 !important;
+  filter: none !important;
+}
+#tbl td code, #tbl th code,
+#tbl td span, #tbl th span {
+  color: var(--text) !important;
+}
+
+/* === Larger, input-like font size in the step table === */
+#tbl{
+  font-size: 1rem !important;   /* roughly matches input text size */
+}
+#tbl td, #tbl th{
+  font-size: inherit !important;
+  line-height: 1.35;
+  padding: 8px 10px;            /* comfortable tap/click area */
+}
+
+/* === Mobile-only: larger font in Resource Links === */
+
+}
+
+/* === Kill tap flash on the step table (strong override) === */
+#tbl, #tbl * {
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -ms-user-select: none !important;
+  touch-action: manipulation !important;
+}
+
+/* === Resource Links: consistent alignment and spacing === */
+
+
+
+/* Small screens: slightly larger font just for Resource Links */
+
+}
+
+/* === Kill any tap/flash highlight on the table (including wrapper) === */
+.card .bd > div[style*="overflow:auto"],
+.card .bd > div[style*="overflow:auto"] *{
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -ms-user-select: none !important;
+  touch-action: manipulation !important;
+}
+#tbl tr:active, #tbl tr:focus{
+  background-color: transparent !important;
+  outline: none !important;
+}
+
+/* === Resource Links: stack and align cleanly on small screens === */
+
+  
+  
+  
+}
+/* Wide screens: keep inline with better baseline alignment */
+
+
+#resourcesLinks .sep{
+  opacity: .6;
+  margin: 0 6px;
+}
+
+/* === Resource Links: force left alignment === */
+
+
+@media (max-width: 600px){
+  
+  
+}
+
+/* === Resource Links: centered label, left-aligned items === */
+
+
+
+
+  
+  
+  #resourcesLinks .sep{
+    display: inline-block !important;
+    opacity: .6;
+    margin: 0 6px;
+  }
+}
+
+/* Mobile already handled: centered label and stacked items (from prior rules) */
+
+/* === Desktop: tidy two-column layout for Resource Links === */
+
+  
+  /* Stack each link cleanly; hide dot separators on wide screens too */
+  
+  
+}
+
+/* === Desktop: inline Resource Links with non-wrapping separators === */
+
+  /* Label left on desktop */
+  
+  /* Hide any literal separators on desktop */
+  
+
+  /* Items: keep bullet attached to item, never orphan */
+  
+  /* Add bullet before every rl-item except the first rl-item */
+  
+}
+
+/* === Mobile-only: centered label & stacked items for Resource Links === */
+
+  #resourcesLinks a, #resourcesLinks button{
+    display: block !important;
+    padding: 6px 0 !important;
+  }
+  
+}
+
+/* Keep resource bullet with its neighbor */
+#resourcesLinks .sep{ white-space: nowrap; }
+
+/* Resource separators: keep bullet with previous item, minimal spacing */
+#resourcesLinks .sep{
+  white-space: nowrap;
+  margin: 0;            /* no extra margins; spacing handled by trailing space */
+}
+
+/* === Desktop: inline Resource Links with bullets that stay on the same line as the previous item === */
+@media (min-width: 601px){
+  /* Hide any literal separators we inserted earlier */
+  #resourcesLinks .sep{ display: none !important; }
+
+  /* Keep default inline flow (original layout) */
+  #resourcesLinks{ display: block; text-align: left; }
+
+  /* Add non-wrapping bullet after each direct child link; remove after the last link */
+  #resourcesLinks > a::after{
+    content: " \2022";           /* leading space + bullet */
+    white-space: nowrap;          /* keep bullet with the link text */
+    margin: 0 10px 0 2px;         /* modest spacing */
+    opacity: .7;
+  }
+  #resourcesLinks > a:last-of-type::after{
+    content: ""; margin: 0;
+  }
+}
+
+/* === Small screens: centered label, stacked items, bullets hidden (known-good) === */
+@media (max-width: 600px){
+  #resourcesLinks{
+    display: block !important;
+    text-align: left !important;
+  }
+  #resourcesLinks > span{
+    display: block !important;
+    width: 100% !important;
+    text-align: center !important;
+    margin: 2px 0 8px !important;
+    font-weight: 700;
+  }
+  #resourcesLinks a,
+  #resourcesLinks button{
+    display: block !important;
+    padding: 6px 0 !important;
+    line-height: 1.35 !important;
+  }
+  #resourcesLinks .sep{ display: none !important; }
+}
+
+/* Desktop: keep each link + bullet on one line, with tidy spacing */
+@media (min-width: 601px){
+  #resourcesLinks .rl-chunk{
+    display: inline-block;
+    white-space: nowrap;
+    margin-right: 12px;
+  }
+  #resourcesLinks .rl-chunk:last-of-type{ margin-right: 0; }
+}
+
+/* Desktop: add more space between the title and the first item */
+@media (min-width: 601px){
+  #resourcesLinks > span{
+    display: inline-block;
+    margin-right: 18px; /* tweak as desired (16–24px range looks good) */
+  }
+}
+
+/* === Big screens: put the "Resource Links:" title on its own line === */
+@media (min-width: 900px){
+  #resourcesLinks > span{
+    display: block !important;
+    width: 100% !important;
+    text-align: left !important;
+    margin: 0 0 8px 0 !important; /* add a little space below the title */
+  }
+  /* Keep the link+bullet chunks inline below the title */
+  #resourcesLinks .rl-chunk{ 
+    display: inline-block; 
+    white-space: nowrap; 
+    margin-right: 14px; 
+  }
+  #resourcesLinks .rl-chunk:last-of-type{ margin-right: 0; }
+}
+
+/* === Desktop: align wrapped rows under the first item === */
+@media (min-width: 900px){
+  #resourcesLinks{ display: block; text-align: left; }
+  #resourcesLinks > span:first-child{
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 18px; /* spacing between label and items */
+    font-weight: 700;
+  }
+  #resourcesItems{
+    display: inline-block;
+    vertical-align: top;
+  }
+  /* Keep each link+bullet chunk tidy */
+  #resourcesItems .rl-chunk{
+    display: inline-block;
+    white-space: nowrap;
+    margin-right: 12px;
+  }
+  #resourcesItems .rl-chunk:last-of-type{ margin-right: 0; }
+}
+
+/* Ensure mobile keeps the known-good stacked layout */
+@media (max-width: 600px){
+  #resourcesItems{ display: block !important; }
+}
+
+/* === No tap/flash highlight on the step table === */
+.card .bd > div[style*="overflow:auto"],
+.card .bd > div[style*="overflow:auto"] *{
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -ms-user-select: none !important;
+  touch-action: manipulation !important;
+}
+#tbl, #tbl *{
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+}
+#tbl tr:active, #tbl tr:focus{
+  background-color: transparent !important;
+  outline: none !important;
+}
+
+/* === Color Theme === */
+:root[data-theme='blue']{
+  --bg: #0e1525;
+  --panel: #121a2b;
+  --panel-2: #0f1725;
+  --text: #f6f8ff;
+  --muted: #8aa2c4;
+  --border: rgba(124,58,237,.45);
+  --accent: #7c3aed;   /* violet */
+  --accent-2: #10b981; /* emerald */
+  --accent-3: #f59e0b; /* amber */
+  --link: #8b5cf6;
+  --link-hover: #a78bfa;
+  --rowHover: rgba(124,58,237,.12);
+  --currentRowBg: rgba(124,58,237,.18);
+  --currentRowBorder: rgba(124,58,237,.55);
+}
+:root[data-theme='blue'] body{ background: var(--bg); color: var(--text); }
+:root[data-theme='blue'] .card{ background: var(--panel); border-color: var(--border); }
+:root[data-theme='blue'] .card .hd{ color: var(--text); }
+:root[data-theme='blue'] a{ color: var(--link); }
+:root[data-theme='blue'] a:hover{ color: var(--link-hover); }
+/* Cycle bar & accents */
+:root[data-theme='blue'] .cyclebar .dot,
+:root[data-theme='blue'] .cyclebar .seg{ background: var(--accent); border-color: var(--border); }
+:root[data-theme='blue'] .cyclebar .seg.current,
+:root[data-theme='blue'] .cyclebar .dot.current{ background: var(--accent-2); }
+/* Table highlight + hover */
+:root[data-theme='blue'] #tbl tr:hover{ background: var(--rowHover); }
+:root[data-theme='blue'] #tbl tr.current{ background: var(--currentRowBg) !important; outline: 0; box-shadow: inset 3px 0 0 0 var(--currentRowBorder); }
+/* Buttons/inputs */
+:root[data-theme='blue'] .btn, 
+:root[data-theme='blue'] button, 
+:root[data-theme='blue'] input[type="checkbox"],
+:root[data-theme='blue'] input[type="radio"],
+:root[data-theme='blue'] select{
+  accent-color: var(--accent);
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--panel-2);
+}
+:root[data-theme='blue'] .btn.primary{ background: var(--accent); color: white; }
+:root[data-theme='blue'] .btn.primary:hover{ filter: brightness(1.08); }
+/* Sliders */
+:root[data-theme='blue'] input[type=range]::-webkit-slider-thumb{ background: var(--accent); }
+:root[data-theme='blue'] input[type=range]::-moz-range-thumb{ background: var(--accent); }
+
+/* === Color Theme (lighter / mid) overrides === */
+:root[data-theme='blue']{
+  /* Surfaces: brighter than the previous deep navy */
+  --bg: #1a2436;        /* was #0e1525 */
+  --panel: #22304a;     /* was #121a2b */
+  --panel-2: #273758;   /* was #0f1725 */
+  --text: #f1f5ff;      /* slightly softer than pure white */
+  --muted: #9bb0cc;     /* lighter muted text */
+  --border: rgba(124,58,237,.30); /* subtler borders */
+  /* Accents: more pastel */
+  --accent: #8f6cf0;    /* lighter violet */
+  --accent-2: #34d399;  /* lighter emerald */
+  --accent-3: #fbbf24;  /* lighter amber */
+  --link: #a78bfa;      /* lighter link */
+  --link-hover: #c4b5fd;
+
+  /* Table row treatments (lighter) */
+  --rowHover: rgba(124,58,237,.08);     /* was .12 */
+  --currentRowBg: rgba(124,58,237,.12); /* was .18 */
+  --currentRowBorder: rgba(124,58,237,.40); /* was .55 */
+}
+
+/* Inputs/buttons feel a touch brighter */
+:root[data-theme='blue'] .btn, 
+:root[data-theme='blue'] button, 
+:root[data-theme='blue'] input[type="checkbox"],
+:root[data-theme='blue'] input[type="radio"],
+:root[data-theme='blue'] select{
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+/* Primary action still pops but with pastel accent */
+:root[data-theme='blue'] .btn.primary{ background: var(--accent); color: #fff; }
+
+/* Cycle bar keeps contrast but slightly softer base */
+:root[data-theme='blue'] .cyclebar .dot,
+:root[data-theme='blue'] .cyclebar .seg{
+  background: var(--accent);
+  border-color: var(--border);
+}
+:root[data-theme='blue'] .cyclebar .seg.current,
+:root[data-theme='blue'] .cyclebar .dot.current{
+  background: var(--accent-2);
+}
+
+/* === Color Theme (brighter, sky-blue leaning) overrides === */
+:root[data-theme='blue']{
+  /* Surfaces: a step brighter and cooler (sky-blue slate) */
+  --bg: #243b59;          /* slightly brighter than before, cooler blue */
+  --panel: #2c4870;       /* panel card bg */
+  --panel-2: #335386;     /* inputs/buttons bg */
+  --text: #f5f8ff;        /* soft white */
+  --muted: #afc3db;       /* lighter muted text */
+  --border: rgba(59,130,246,.30); /* blue-500 at 30% */
+
+  /* Sky-forward accents */
+  --accent: #60a5fa;      /* blue-400 */
+  --accent-2: #38bdf8;    /* sky-400 */
+  --accent-3: #fbbf24;    /* amber-400 */
+
+  --link: #3b82f6;        /* blue-500 */
+  --link-hover: #60a5fa;  /* blue-400 */
+
+  /* Table emphasis tuned to blue */
+  --rowHover: rgba(59,130,246,.10);     /* subtle hover */
+  --currentRowBg: rgba(59,130,246,.16); /* current row fill */
+  --currentRowBorder: rgba(59,130,246,.45);
+}
+
+/* Buttons/inputs keep contrast but feel brighter */
+:root[data-theme='blue'] .btn, 
+:root[data-theme='blue'] button, 
+:root[data-theme='blue'] input[type="checkbox"],
+:root[data-theme='blue'] input[type="radio"],
+:root[data-theme='blue'] select{
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Primary action in sky-blue */
+:root[data-theme='blue'] .btn.primary{ background: var(--accent); color: #fff; }
+:root[data-theme='blue'] .btn.primary:hover{ filter: brightness(1.07); }
+
+/* Cycle bar uses sky accents */
+:root[data-theme='blue'] .cyclebar .dot,
+:root[data-theme='blue'] .cyclebar .seg{
+  background: var(--accent);
+  border-color: var(--border);
+}
+:root[data-theme='blue'] .cyclebar .seg.current,
+:root[data-theme='blue'] .cyclebar .dot.current{
+  background: var(--accent-2);
+}
+
+/* Sliders thumbs in sky-blue */
+:root[data-theme='blue'] input[type=range]::-webkit-slider-thumb{ background: var(--accent); }
+:root[data-theme='blue'] input[type=range]::-moz-range-thumb{ background: var(--accent); }
+
+/* === Color Theme: black subdivision box and table === */
+:root[data-theme='blue'] #subdiv{
+  background: #000 !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+:root[data-theme='blue'] #subdiv option{
+  background: #000 !important;
+  color: var(--text) !important;
+}
+
+/* Table + wrapper to pure black in Color theme */
+:root[data-theme='blue'] #tbl{
+  background: #000 !important;
+}
+:root[data-theme='blue'] #tbl th,
+:root[data-theme='blue'] #tbl td{
+  background: #000 !important;
+}
+/* If the table sits inside a scroll wrapper, darken that too to avoid contrast edges */
+:root[data-theme='blue'] .card .bd > div[style*="overflow:auto"]{
+  background: #000 !important;
+}
+
+/* === Color Theme: table matches background, stronger step highlight === */
+:root[data-theme='blue'] #tbl,
+:root[data-theme='blue'] #tbl th,
+:root[data-theme='blue'] #tbl td{
+  background: var(--bg) !important;
+}
+
+/* Slightly stronger highlight + hover so steps stand out on the bg */
+:root[data-theme='blue']{
+  --rowHover: rgba(59,130,246,.12);
+  --currentRowBg: rgba(59,130,246,.22);
+  --currentRowBorder: rgba(59,130,246,.60);
+}
+
+/* === Color Theme: unify backgrounds and make highlights visible === */
+/* Use the same background around the table (no stark black edge) */
+:root[data-theme='blue'] .card .bd,
+:root[data-theme='blue'] .card .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+
+/* Table cells inherit the page bg by default */
+:root[data-theme='blue'] #tbl,
+:root[data-theme='blue'] #tbl th,
+:root[data-theme='blue'] #tbl td{
+  background: var(--bg) !important;
+}
+
+/* Boost highlight contrast for Color theme */
+:root[data-theme='blue']{
+  --rowHover: rgba(59,130,246,.16);      /* a bit stronger than before */
+  --currentRowBg: rgba(59,130,246,.30);  /* clearly visible */
+  --currentRowBorder: rgba(59,130,246,.70);
+}
+
+/* Apply the hover/highlight directly to cells for specificity win */
+:root[data-theme='blue'] #tbl tr:hover > th,
+:root[data-theme='blue'] #tbl tr:hover > td{
+  background: var(--rowHover) !important;
+}
+:root[data-theme='blue'] #tbl tr.current > th,
+:root[data-theme='blue'] #tbl tr.current > td{
+  background: var(--currentRowBg) !important;
+}
+
+/* Keep a clear left accent on the current row */
+:root[data-theme='blue'] #tbl tr.current > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowBorder);
+}
+
+/* === Yellow Theme (based on Blue surfaces, amber accents) === */
+
+
+/* Components adopt variables automatically; keep same structural rules as Blue */
+
+/* unify backgrounds around table */
+
+
+/* table cells */
+
+
+/* hover/highlight directly on cells */
+
+
+
+
+/* cyclebar accents */
+
+
+
+/* buttons/inputs */
+
+
+
+
+/* slider thumbs */
+
+
+
+/* subdivision selector and options: match Blue behavior (black for clarity) */
+
+
+
+/* === Yellow Theme: make yellow the primary accent (stronger, everywhere) === */
+
+
+/* Inputs/buttons adopt yellow as accent */
+
+
+/* Primary action = yellow, with dark text for contrast */
+
+
+
+/* Cycle bar uses yellow accents */
+
+
+
+/* Highlights applied directly to cells for visibility */
+
+
+
+
+/* === Yellow Theme: yellow-leaning surfaces + strong contrast === */
+
+
+/* Ensure panels adopt the updated surfaces */
+
+
+
+
+/* Surrounding areas and table already follow var(--bg) in previous rules */
+
+/* === Yellow Theme: explicit yellow surfaces + tuned contrast === */
+
+
+/* Apply surfaces */
+
+
+
+
+/* Unify table surroundings with the light yellow background */
+
+
+/* Table cells match background so highlights stand out */
+
+
+/* Strong, readable highlights on light yellow */
+
+
+
+
+/* Cycle bar uses yellow accents */
+
+
+
+/* Buttons/inputs remain readable on light yellow */
+
+
+
+
+/* Slider thumbs pick up yellow accent */
+
+
+
+/* === Yellow Theme: school-bus yellow surfaces + tuned contrast === */
+
+
+/* Apply surfaces */
+
+
+
+
+/* Surrounding areas and table unify with bg */
+
+
+
+/* Cell-level hover/highlight for visibility */
+
+
+
+
+/* Buttons/inputs consistent with darker surfaces */
+
+
+
+
+/* Cycle bar accents */
+
+
+
+/* Subdivision selector stays black for legibility against yellow */
+
+
+/* === Yellow Theme: darker bus-yellow surfaces, readable links, bolder text === */
+
+
+/* Apply surfaces */
+
+
+
+
+/* Table & surroundings match background */
+
+
+/* Visible hover/current highlights (cell-level) */
+
+
+
+
+/* Subdivision selector: no black box; use themed control surface */
+
+
+/* Resource Links: ensure strong readable text on yellow */
+
+
+
+
+/* Buttons/inputs harmonize with darker yellow surfaces */
+
+
+
+
+/* Cycle bar with yellow accents */
+
+
+
+/* === Yellow Theme: darker control surfaces for boxes & keycaps, readable text === */
+/* Tokens aligned with Blue's relationships: bg < panel < control(field) darkest */
+
+
+/* Apply control tokens to all boxes */
+
+
+/* Subdivision selector follows the same control surface */
+
+
+/* Keyboard shortcut keycaps */
+
+
+/* Hover/focus states for controls to maintain clarity */
+
+
+/* Disabled state stays legible */
+
+
+/* === Yellow Theme: distinct button color + matching table highlight === */
+
+
+/* Override earlier generic box styling so ONLY inputs/selects/textareas use --field.
+   Buttons use --btn to stand apart (like in Blue). */
+
+
+/* Buttons pick up the primary yellow button color */
+
+
+
+
+/* Keep keycaps and subdiv on the darker control surface for contrast */
+
+
+/* Apply the (button-colored) highlight directly to cells (already tuned above via variables) */
+
+
+
+
+/* === Yellow Theme: readability + controls polish === */
+/* 1) Lighter table highlight tied to button hue */
+
+
+/* 2) Make button borders visible on first load */
+
+
+/* Keep primary appearance */
+
+
+/* 3) Volume slider: blend like Blue (track ~ panel-2, thumb ~ button) */
+
+
+
+
+
+
+/* === Yellow Theme: slider area blend + solid highlight === */
+
+
+/* Volume slider element styled as a pill so the surrounding area blends with bg */
+
+
+/* Keep the track readable atop the pill */
+
+
+
+/* Solid current row highlight = button color (not affected by bg) */
+
+
+
+/* Hover stays a subtle tint derived from the same button color */
+
+
+/* Reinforce button borders so they’re visible before any state changes */
+
+
+/* === Yellow Theme: highlight modeled after Blue (hover tint + slightly darker current) === */
+
+
+/* Apply these to cells (override solid button fill from previous pass) */
+
+
+
+/* === Yellow Theme: subtle highlight delta (hover -> current) === */
+
+
+
+/* === Yellow Theme: ultra-subtle current highlight (close to hover) === */
+
+
+/* Apply to cells with highest precedence */
+
+
+/* Use a very light outline plus the left accent to signal selection instead of dark fill */
+
+
+/* === Yellow Theme: perceptible-but-small current highlight === */
+
+
+/* Apply with very high specificity and precedence */
+
+
+/* Keep the left accent guide subtle but visible */
+
+
+/* === Yellow Theme: lighten-style current highlight for clarity === */
+
+
+/* Apply with high specificity; avoid any blend that could darken */
+
+
+/* Left accent remains in button hue */
+
+
+/* === Yellow Theme: use edge color for full highlight fill === */
+
+
+
+/* === Match Light/Dark: no table hover highlight in Blue & Yellow === */
+:root[data-theme='blue'],
+
+:root[data-theme='blue'] table#tbl tr:hover > th,
+:root[data-theme='blue'] table#tbl tr:hover > td,
+
+
+/* === Yellow: hard-disable table hover (match Light/Dark exactly) === */
+
+
+
+/* === Ensure current-row stays highlighted even when hovered (Blue & Yellow) === */
+
+
+
+:root[data-theme='blue'] table#tbl tr.current:hover > th,
+:root[data-theme='blue'] table#tbl tr.current:hover > td,
+:root[data-theme='blue'] #tbl tr.current:hover > th,
+:root[data-theme='blue'] #tbl tr.current:hover > td{
+  background: var(--currentRowBg) !important;
+  color: var(--text) !important;
+}
+:root[data-theme='blue'] table#tbl tr.current:hover > td:first-child,
+:root[data-theme='blue'] #tbl tr.current:hover > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowBorder) !important;
+}
+
+/* === Keep current row visible while hovered/active/focused (Yellow & Blue) === */
+
+
+
+/* Mirror for Blue to keep parity */
+:root[data-theme='blue'] table#tbl tr.current:hover > th,
+:root[data-theme='blue'] table#tbl tr.current:hover > td,
+:root[data-theme='blue'] table#tbl tr.current:active > th,
+:root[data-theme='blue'] table#tbl tr.current:active > td,
+:root[data-theme='blue'] table#tbl tr.current:focus-within > th,
+:root[data-theme='blue'] table#tbl tr.current:focus-within > td,
+:root[data-theme='blue'] #tbl tr.current:hover > th,
+:root[data-theme='blue'] #tbl tr.current:hover > td,
+:root[data-theme='blue'] #tbl tr.current:active > th,
+:root[data-theme='blue'] #tbl tr.current:active > td,
+:root[data-theme='blue'] #tbl tr.current:focus-within > th,
+:root[data-theme='blue'] #tbl tr.current:focus-within > td{
+  background: var(--currentRowBg) !important;
+  color: var(--text) !important;
+}
+:root[data-theme='blue'] table#tbl tr.current:hover > td:first-child,
+:root[data-theme='blue'] table#tbl tr.current:active > td:first-child,
+:root[data-theme='blue'] table#tbl tr.current:focus-within > td:first-child,
+:root[data-theme='blue'] #tbl tr.current:hover > td:first-child,
+:root[data-theme='blue'] #tbl tr.current:active > td:first-child,
+:root[data-theme='blue'] #tbl tr.current:focus-within > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowBorder) !important;
+}
+
+/* === Hover suppression only for non-current rows (fix highlight-on-hover issue) === */
+
+
+:root[data-theme='blue'] table#tbl tr:not(.current):hover > th,
+:root[data-theme='blue'] table#tbl tr:not(.current):hover > td,
+:root[data-theme='blue'] #tbl tr:not(.current):hover > th,
+:root[data-theme='blue'] #tbl tr:not(.current):hover > td{
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* === Yellow: lock current-row highlight on hover (cells + row), suppress hover elsewhere === */
+
+
+/* 1) Non-current rows/cells: no hover */
+
+
+/* 2) Current row: force highlight even while hovered at row or cell level */
+
+
+/* Keep left accent visible */
+
+
+/* === Yellow minimal fix: no hover for non-current rows; keep current row visible while hovered === */
+
+
+
+
+/* === Yellow (rebuilt from Blue structure) === */
+:root[data-theme='yellow']{
+  /* Surfaces (darker, school-bus shade but subdued) */
+  --bg: #E6B615;
+  --panel: #D59A08;
+  --panel-2: #B87406;
+
+  /* Text & accents */
+  --text: #0b0b0b;
+  --muted: #4a3b05;
+  --border: rgba(180,83,9,.45);
+
+  /* Buttons & links */
+  --btn: #EAB308;            /* primary button hue */
+  --btn-rgb: 234,179,8;      /* for tints */
+  --link: #92400e;
+  --link-hover: #b45309;
+
+  /* Table highlight (mirror Blue structure; no hover, clear current) */
+  --rowHover: transparent;
+  --currentRowBg: rgba(var(--btn-rgb), .14);
+  --currentRowBorder: rgba(var(--btn-rgb), .55);
+}
+
+/* Surfaces and cards */
+:root[data-theme='yellow'] body{ background: var(--bg); color: var(--text); }
+:root[data-theme='yellow'] .card{ background: var(--panel); border-color: var(--border); }
+:root[data-theme='yellow'] .card .hd{ color: var(--text); }
+:root[data-theme='yellow'] a{ color: var(--link); }
+:root[data-theme='yellow'] a:hover{ color: var(--link-hover); }
+
+/* Controls: inputs/selects use panel-2; buttons use --btn (like Blue) */
+:root[data-theme='yellow'] input,
+:root[data-theme='yellow'] select,
+:root[data-theme='yellow'] textarea{
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+:root[data-theme='yellow'] .btn,
+:root[data-theme='yellow'] button{
+  background: var(--btn);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Cycle bar colors */
+:root[data-theme='yellow'] .cyclebar .dot,
+:root[data-theme='yellow'] .cyclebar .seg{ background: var(--btn); border-color: var(--border); }
+:root[data-theme='yellow'] .cyclebar .seg.current,
+:root[data-theme='yellow'] .cyclebar .dot.current{ background: rgba(var(--btn-rgb), .85); }
+
+/* Table: no hover; current row uses same selectors as Blue */
+:root[data-theme='yellow'] #tbl tr:not(.current):hover > th,
+:root[data-theme='yellow'] #tbl tr:not(.current):hover > td{
+  background: transparent !important;
+  background-color: transparent !important;
+}
+:root[data-theme='yellow'] #tbl tr.current > th,
+:root[data-theme='yellow'] #tbl tr.current > td{
+  background: var(--currentRowBg) !important;
+  color: var(--text) !important;
+}
+:root[data-theme='yellow'] #tbl tr.current > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowBorder) !important;
+}
+
+/* === Yellow tidy (token-only) — safe override block === */
+:root[data-theme='yellow']{
+  /* Surfaces: school-bus but a touch muted for comfort */
+  --bg: #E3B614;       /* slightly less glaring */
+  --panel: #D19B06;    /* a step darker than bg */
+  --panel-2: #A87403;  /* darkest surface for inputs */
+  /* Type & borders */
+  --text: #0b0b0b;
+  --muted: #5b4a0c;
+  --border: rgba(161, 98, 7, .45); /* from #A16207 */
+  /* Buttons & accent (drives table highlight) */
+  --btn: #F2C316;
+  --btn-rgb: 242,195,22;
+  /* Links */
+  --link: #7c2d12;
+  --link-hover: #a14315;
+  /* Table highlight — small, readable step */
+  --rowHover: transparent;
+  --currentRowBg: rgba(var(--btn-rgb), .14);
+  --currentRowBorder: rgba(var(--btn-rgb), .55);
+}
+
+/* Unify table + scroll area with bg (visual polish) */
+:root[data-theme='yellow'] .card .bd,
+:root[data-theme='yellow'] .card .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+:root[data-theme='yellow'] #tbl,
+:root[data-theme='yellow'] #tbl th,
+:root[data-theme='yellow'] #tbl td{
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Slider styling to match theme (track on panel-2, thumb on button hue) */
+:root[data-theme='yellow'] input[type=range]{
+  background: transparent;
+}
+:root[data-theme='yellow'] input[type=range]::-webkit-slider-runnable-track{
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 9999px;
+}
+:root[data-theme='yellow'] input[type=range]::-moz-range-track{
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 9999px;
+}
+:root[data-theme='yellow'] input[type=range]::-webkit-slider-thumb{
+  background: var(--btn);
+  border: 1px solid var(--border);
+  width: 14px; height: 14px; border-radius: 50%;
+  margin-top: -5px; /* center on track */
+}
+:root[data-theme='yellow'] input[type=range]::-moz-range-thumb{
+  background: var(--btn);
+  border: 1px solid var(--border);
+  width: 14px; height: 14px; border-radius: 50%;
+}
+
+/* === Yellow: solid current-row highlight (no alpha, no color-mix) === */
+:root[data-theme='yellow']{
+  --currentRowSolid: rgb(234, 188, 21);
+  --currentRowEdge:   rgb(238, 191, 21);
+}
+:root[data-theme='yellow'] #tbl tr.current > th,
+:root[data-theme='yellow'] #tbl tr.current > td{
+  background: var(--currentRowSolid) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+}
+:root[data-theme='yellow'] #tbl tr.current > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowEdge) !important;
+}
+
+/* Keep non-current rows hoverless */
+:root[data-theme='yellow'] #tbl tr:not(.current):hover > th,
+:root[data-theme='yellow'] #tbl tr:not(.current):hover > td{
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* === Yellow: brighter keyboard shortcut keycaps === */
+:root[data-theme='yellow'] .keyLegend code,
+:root[data-theme='yellow'] #legendMobile code,
+:root[data-theme='yellow'] #legendMobileStatic code{
+  background: var(--btn) !important;   /* use button yellow for visibility */
+  color: #0b0b0b !important;           /* dark text for contrast */
+  border: 1px solid var(--border) !important;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.12);
+  opacity: 1 !important;
+  filter: none !important;
+  font-weight: 600;
+}
+
+/* === Compact Theme selector (global) === */
+#theme{
+  font-size: 12px;
+  padding: 2px 6px;
+  height: 26px;
+  line-height: 22px;
+  min-width: 92px;
+  max-width: 120px;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+/* Tighten the "Theme:" label spacing */
+label:has(#theme) span:first-child{
+  margin-right: 4px;
+}
+/* Slightly smaller on very small screens */
+@media (max-width: 480px){
+  #theme{
+    font-size: 11.5px;
+    height: 24px;
+    min-width: 86px;
+  }
+}
+
+/* === Blue & Yellow: panel body backgrounds === */
+/* Default: non-table cards use panel background */
+:root[data-theme='blue'] .card:not(:has(#tbl)) .bd,
+:root[data-theme='blue'] .card:not(:has(#tbl)) .bd > div[style*="overflow:auto"],
+:root[data-theme='yellow'] .card:not(:has(#tbl)) .bd,
+:root[data-theme='yellow'] .card:not(:has(#tbl)) .bd > div[style*="overflow:auto"]{
+  background: var(--panel) !important;
+}
+
+/* Table card uses the bg (so the table blends cleanly) */
+:root[data-theme='blue'] .card:has(#tbl) .bd,
+:root[data-theme='blue'] .card:has(#tbl) .bd > div[style*="overflow:auto"],
+:root[data-theme='yellow'] .card:has(#tbl) .bd,
+:root[data-theme='yellow'] .card:has(#tbl) .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+
+/* === Green theme (modeled on Blue/Yellow structure) === */
+:root[data-theme='green']{
+  /* Surfaces (deep green slate) */
+  --bg: #0f2a22;         /* page background */
+  --panel: #163a2f;      /* cards */
+  --panel-2: #1d4a3c;    /* inputs */
+  /* Type & muted */
+  --text: #f3fff8;
+  --muted: #a7d3bf;
+  --border: rgba(16,185,129,.35); /* emerald-500 @ 35% */
+  /* Buttons/links (primary hue) */
+  --btn: #22c55e;        /* green-500 */
+  --btn-rgb: 34,197,94;
+  --link: #34d399;       /* emerald-400 */
+  --link-hover: #6ee7b7; /* emerald-300 */
+  /* Table highlight (no hover on non-current) */
+  --rowHover: transparent;
+  --currentRowBg: rgba(var(--btn-rgb), .16);
+  --currentRowBorder: rgba(var(--btn-rgb), .55);
+}
+
+/* Surface applications */
+:root[data-theme='green'] body{ background: var(--bg); color: var(--text); }
+:root[data-theme='green'] .card{ background: var(--panel); border-color: var(--border); }
+:root[data-theme='green'] .card .hd{ color: var(--text); }
+:root[data-theme='green'] a{ color: var(--link); }
+:root[data-theme='green'] a:hover{ color: var(--link-hover); }
+
+/* Controls: inputs/selects on panel-2; buttons on btn */
+:root[data-theme='green'] input,
+:root[data-theme='green'] select,
+:root[data-theme='green'] textarea{
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+:root[data-theme='green'] .btn,
+:root[data-theme='green'] button{
+  background: var(--btn);
+  border-color: var(--border);
+  color: #062311; /* dark text for contrast on green btn */
+}
+
+/* Cycle bar */
+:root[data-theme='green'] .cyclebar .dot,
+:root[data-theme='green'] .cyclebar .seg{ background: var(--btn); border-color: var(--border); }
+:root[data-theme='green'] .cyclebar .seg.current,
+:root[data-theme='green'] .cyclebar .dot.current{ background: rgba(var(--btn-rgb), .85); }
+
+/* Table: no hover on non-current; current row visible */
+:root[data-theme='green'] #tbl tr:not(.current):hover > th,
+:root[data-theme='green'] #tbl tr:not(.current):hover > td{
+  background: transparent !important;
+  background-color: transparent !important;
+}
+:root[data-theme='green'] #tbl tr.current > th,
+:root[data-theme='green'] #tbl tr.current > td{
+  background: var(--currentRowBg) !important;
+  color: var(--text) !important;
+}
+:root[data-theme='green'] #tbl tr.current > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowBorder) !important;
+}
+
+/* Slider styling to match theme */
+:root[data-theme='green'] input[type=range]{
+  background: transparent;
+}
+:root[data-theme='green'] input[type=range]::-webkit-slider-runnable-track{
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 9999px;
+}
+:root[data-theme='green'] input[type=range]::-moz-range-track{
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 9999px;
+}
+:root[data-theme='green'] input[type=range]::-webkit-slider-thumb{
+  background: var(--btn);
+  border: 1px solid var(--border);
+  width: 14px; height: 14px; border-radius: 50%;
+  margin-top: -5px;
+}
+:root[data-theme='green'] input[type=range]::-moz-range-thumb{
+  background: var(--btn);
+  border: 1px solid var(--border);
+  width: 14px; height: 14px; border-radius: 50%;
+}
+
+/* Panel background polish like Blue/Yellow */
+:root[data-theme='green'] .card:not(:has(#tbl)) .bd,
+:root[data-theme='green'] .card:not(:has(#tbl)) .bd > div[style*="overflow:auto"]{
+  background: var(--panel) !important;
+}
+:root[data-theme='green'] .card:has(#tbl) .bd,
+:root[data-theme='green'] .card:has(#tbl) .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+
+/* === Red theme (mirrors Blue/Yellow/Green structure) === */
+:root[data-theme='red']{
+  /* Surfaces (deep wine/cranberry) */
+  --bg: #2a0f12;         /* page background */
+  --panel: #3a161b;      /* cards */
+  --panel-2: #4a1d24;    /* inputs */
+  /* Type & muted */
+  --text: #fff5f6;
+  --muted: #f3b3b9;
+  --border: rgba(244,63,94,.35); /* rose-500 @ 35% */
+  /* Buttons/links (primary hue) */
+  --btn: #ef4444;        /* red-500 */
+  --btn-rgb: 239,68,68;
+  --link: #fb7185;       /* rose-400 */
+  --link-hover: #fecdd3; /* rose-200 */
+  /* Table highlight (no hover on non-current) */
+  --rowHover: transparent;
+  --currentRowBg: rgba(var(--btn-rgb), .16);
+  --currentRowBorder: rgba(var(--btn-rgb), .55);
+}
+
+/* Surface applications */
+:root[data-theme='red'] body{ background: var(--bg); color: var(--text); }
+:root[data-theme='red'] .card{ background: var(--panel); border-color: var(--border); }
+:root[data-theme='red'] .card .hd{ color: var(--text); }
+:root[data-theme='red'] a{ color: var(--link); }
+:root[data-theme='red'] a:hover{ color: var(--link-hover); }
+
+/* Controls: inputs/selects on panel-2; buttons on btn */
+:root[data-theme='red'] input,
+:root[data-theme='red'] select,
+:root[data-theme='red'] textarea{
+  background: var(--panel-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+:root[data-theme='red'] .btn,
+:root[data-theme='red'] button{
+  background: var(--btn);
+  border-color: var(--border);
+  color: #1a0a0b; /* dark text for contrast on red btn */
+}
+
+/* Cycle bar */
+:root[data-theme='red'] .cyclebar .dot,
+:root[data-theme='red'] .cyclebar .seg{ background: var(--btn); border-color: var(--border); }
+:root[data-theme='red'] .cyclebar .seg.current,
+:root[data-theme='red'] .cyclebar .dot.current{ background: rgba(var(--btn-rgb), .85); }
+
+/* Table: no hover on non-current; current row visible */
+:root[data-theme='red'] #tbl tr:not(.current):hover > th,
+:root[data-theme='red'] #tbl tr:not(.current):hover > td{
+  background: transparent !important;
+  background-color: transparent !important;
+}
+:root[data-theme='red'] #tbl tr.current > th,
+:root[data-theme='red'] #tbl tr.current > td{
+  background: var(--currentRowBg) !important;
+  color: var(--text) !important;
+}
+:root[data-theme='red'] #tbl tr.current > td:first-child{
+  box-shadow: inset 3px 0 0 0 var(--currentRowBorder) !important;
+}
+
+/* Slider styling to match theme */
+:root[data-theme='red'] input[type=range]{ background: transparent; }
+:root[data-theme='red'] input[type=range]::-webkit-slider-runnable-track{
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 9999px;
+}
+:root[data-theme='red'] input[type=range]::-moz-range-track{
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 9999px;
+}
+:root[data-theme='red'] input[type=range]::-webkit-slider-thumb{
+  background: var(--btn);
+  border: 1px solid var(--border);
+  width: 14px; height: 14px; border-radius: 50%;
+  margin-top: -5px;
+}
+:root[data-theme='red'] input[type=range]::-moz-range-thumb{
+  background: var(--btn);
+  border: 1px solid var(--border);
+  width: 14px; height: 14px; border-radius: 50%;
+}
+
+/* Panel background polish like other color themes */
+:root[data-theme='red'] .card:not(:has(#tbl)) .bd,
+:root[data-theme='red'] .card:not(:has(#tbl)) .bd > div[style*="overflow:auto"]{
+  background: var(--panel) !important;
+}
+:root[data-theme='red'] .card:has(#tbl) .bd,
+:root[data-theme='red'] .card:has(#tbl) .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+</style>
+<!-- BENCHMARK: 0810-78-CONFIRMED-ICU.html (set as confirmed baseline on 2025-08-10) -->
+<!-- BENCHMARK: Locked on 2025-08-11 08:44:43 PT | Themes: Dark, Light, Blue, Yellow, Green, Red -->
+<style>
+
+/* === Yellow Theme: sea turtles background (desktop + mobile) === */
+:root[data-theme='yellow'] html,
+:root[data-theme='yellow'] body{
+  background-color: var(--bg);
+  background-image:
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+    url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.12'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E");
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-position:
+    5% 10%,   95% 12%,
+    8% 85%,   90% 92%,
+    50% 8%,   50% 95%,
+    6% 50%,   94% 55%;
+  background-size:
+    160px auto, 130px auto,
+    140px auto, 150px auto,
+    120px auto, 120px auto,
+    110px auto, 110px auto;
+  background-attachment: fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed;
+}
+
+/* On small screens, show only two smaller turtles in opposite corners */
+@media (max-width: 640px){
+  :root[data-theme='yellow'] html,
+  :root[data-theme='yellow'] body{
+    background-image:
+      url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.10'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E"),
+      url("data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20200%20130'%3E%0A%20%20%3Cg%20opacity='0.10'%20fill='%23000000'%3E%0A%20%20%20%20%3Cellipse%20cx='100'%20cy='65'%20rx='55'%20ry='40'/%3E%0A%20%20%20%20%3Ccircle%20cx='155'%20cy='58'%20r='12'/%3E%0A%20%20%20%20%3Cpath%20d='M45%2065%20l-12%20-5%20l12%20-5%20z'/%3E%0A%20%20%20%20%3Cellipse%20cx='135'%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(25%20135%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='65'%20%20cy='98'%20rx='22'%20ry='12'%20transform='rotate(-25%2065%2098)'/%3E%0A%20%20%20%20%3Cellipse%20cx='140'%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(-20%20140%2030)'/%3E%0A%20%20%20%20%3Cellipse%20cx='60'%20%20cy='30'%20rx='20'%20ry='10'%20transform='rotate(20%2060%2030)'/%3E%0A%20%20%3C/g%3E%0A%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 96% 12%, 4% 94%;
+    background-size: 64px auto, 56px auto;
+    background-attachment: scroll, scroll;
+  }
+}
+
+</style>
+<style id="volwarn-min-style">
+/* Keep layout intact; just force warning to break onto a new line */
+label .volwarn{
+  display:block;
+  color:red;
+  font-weight:700;
+  margin-top:2px;
+  line-height:1.25;
+}
+</style>
+<style id="volfullwidth-style">
+/* Force Allow Full Volume checkbox to take a full row in .opts-inline */
+.opts-inline label:has(#allowFullVolume){
+  flex: 1 1 100% !important;  /* occupy full row */
+  width: 100% !important;
+}
+</style>
+<style id="volall-align-style">
+/* Make only the Allow Full Volume label a tiny grid so text + warning align together */
+label:has(#allowFullVolume){
+  display: inline-grid !important;
+  grid-template-columns: auto 1fr;
+  grid-auto-flow: row;
+  align-items: start;
+  gap: 6px;
+}
+
+/* Place main text and warning in the text column (left-aligned) */
+label:has(#allowFullVolume) .voltext{ grid-column: 2; justify-self: start; text-align: left; display: block; }
+label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-align: left; display: block; margin-top: 2px; color: red; font-weight: 700; line-height: 1.25; }
+</style>
+<style id="theme-align-style">
+/* Push Theme selector to the far right in opts-inline, but allow wrap on small screens */
+.opts-inline{
+  display: flex;
+  flex-wrap: wrap;
+}
+.opts-inline label:has(#theme){
+  margin-left: auto;
+}
+@media (max-width: 700px){
+  .opts-inline label:has(#theme){
+    margin-left: 0;
+    width: 100%;
+  }
+}
+</style>
+<style id="theme-right-fallback-css">
+/* Small screens: let the theme label drop below and be full width */
+@media (max-width: 700px){
+  .opts-inline label.theme-right{
+    margin-left: 0 !important;
+    width: 100% !important;
+    order: 999 !important;
+  }
+}
+</style>
+<style id="blue-panel-fallback-css">
+/* iPad/Safari fallback: parent selectors like :has() can fail.
+   Use JS-added classes to keep Blue theme panels consistent. */
+
+/* Non-table cards (controls) use panel background */
+:root[data-theme='blue'] .card.no-tbl .bd,
+:root[data-theme='blue'] .card.no-tbl .bd > div[style*="overflow:auto"]{
+  background: var(--panel) !important;
+}
+
+/* Table card uses page bg so the table blends cleanly */
+:root[data-theme='blue'] .card.has-tbl .bd,
+:root[data-theme='blue'] .card.has-tbl .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+</style>
+<style id="blue-failsafe-uniform-bg">
+/* Blue theme fail-safe: make every card body and its scroll area use the same background
+   so the bottom matches the top on iPad/Safari (no :has, no JS dependencies). */
+:root[data-theme='blue'] .card .bd,
+:root[data-theme='blue'] .card .bd > div[style*="overflow:auto"]{
+  background: var(--bg) !important;
+}
+/* Ensure the table itself also inherits the uniform bg */
+:root[data-theme='blue'] #tbl,
+:root[data-theme='blue'] #tbl th,
+:root[data-theme='blue'] #tbl td{
+  background: var(--bg) !important;
+}
+</style>
+<style id="blue-edge-bg-fix">
+/* Blue theme: make the outer page (above/below panels) exactly match the header area */
+:root[data-theme='blue'] html,
+:root[data-theme='blue'] body{
+  background: var(--bg) !important;
+  background-color: var(--bg) !important;
+  background-image: none !important;
+}
+/* Ensure the page always fills the viewport so the bottom doesn't show a lighter UA bg */
+:root[data-theme='blue'] body{
+  min-height: 100vh;
+}
+/* Keep the content wrapper transparent so the page bg shows through uniformly */
+:root[data-theme='blue'] .wrap{
+  background: transparent !important;
+}
+</style>
+<style id="silence-row-style">
+.opts-inline .silence-row{
+  flex: 0 0 100%;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  order: 49; /* appear before theme-right (50) */
+}
+.opts-inline .silence-pair{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Keep number box visible on small screens */
+@media (max-width: 700px){
+  .opts-inline .silence-pair input#silenceSubAbove{
+    width: 7ch;
+    min-width: 64px;
+    max-width: 100px;
+  }
+}
+</style>
+<style id="yellow-theme-volume-warning">
+.theme-yellow #allowFullVolumeLabel {
+  color: black !important;
+  font-weight: bold;
+}
+</style>
+<style id="yellow-theme-volume-warning-strong">
+.theme-yellow label#allowFullVolumeLabel,
+.theme-yellow #allowFullVolumeLabel,
+.theme-yellow #allowFullVolumeLabel span,
+.theme-yellow #allowFullVolumeLabel input {
+  color: black !important;
+  font-weight: bold !important;
+}
+</style>
+<style id="yellow-volwarn-override">
+/* Force warning text to black in Yellow theme */
+:root[data-theme='yellow'] .volwarn{
+  color: #000 !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+/* Extra specificity in case inline-grid rules target volwarn inside labels */
+:root[data-theme='yellow'] label .volwarn{
+  color: #000 !important;
+  font-weight: 700 !important;
+}
+</style>
+<style>
+  label:has(> #startSeg:disabled) {
+    color: #888;
+    opacity: 0.7;
+  }
+</style>
+
+
+
+<style>
+/* Keycap styling for keyboard legends — tuned contrast & spacing */
+.keyLegend ul,
+#legendMobile ul,
+#legendMobileStatic ul{
+  list-style:none;
+  margin:8px 0 0 0;
+  padding:0;
+  line-height:1.65;       /* more vertical space so borders never touch */
+}
+.keyLegend li,
+#legendMobile li,
+#legendMobileStatic li{
+  margin:6px 0;           /* extra gap between rows */
+}
+
+/* Shared keycap props */
+.keyLegend kbd,
+#legendMobile kbd,
+#legendMobileStatic kbd{
+  display:inline-block;
+  padding:3px 7px;        /* slightly softer padding */
+  border-radius:6px;
+  font-weight:600;
+  line-height:1.1;
+  vertical-align:middle;
+  background: transparent; /* default fallback if media queries don't match */
+}
+
+/* Dark theme: softer, clear borders & tint */
+@media (prefers-color-scheme: dark){
+  .keyLegend kbd,
+  #legendMobile kbd,
+  #legendMobileStatic kbd{
+    border:1.25px solid rgba(255,255,255,0.65);
+    background: rgba(255,255,255,0.06);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset;
+    color: inherit;
+  }
+}
+
+/* Light theme: analogous balance */
+@media (prefers-color-scheme: light){
+  .keyLegend kbd,
+  #legendMobile kbd,
+  #legendMobileStatic kbd{
+    border:1.25px solid rgba(0,0,0,0.7);
+    background: rgba(0,0,0,0.03);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset;
+    color: inherit;
+  }
+}
+
+/* Separators with comfortable spacing */
+.keyLegend .slash, .keyLegend .plus,
+#legendMobile .slash, #legendMobile .plus,
+#legendMobileStatic .slash, #legendMobileStatic .plus{
+  display:inline-block;
+  padding: 0 6px;
+  opacity: .9;
+  font-weight:600;
+}
+
+/* Subtle press effect (optional) */
+.keyLegend kbd:active,
+#legendMobile kbd:active,
+#legendMobileStatic kbd:active{
+  transform: translateY(1px);
+}
+</style>
+
+
+
+<style>
+/* --- Legend no-wrap fix for iPad --- */
+.keyLegend li, .keyLegend code,
+#legendMobile li, #legendMobile code,
+#legendMobile .nowrap, .keyLegend .nowrap {
+  white-space: nowrap;
+}
+.keyLegend ul, #legendMobile ul { 
+  display: grid; 
+  gap: 4px;
+}
+</style>
+</head>
+<body>
+<h1>Interleaved Clicking Up Metronome</h1>
+<div class="subheader" id="subheader"><strong>Thanks to Dr. Molly Gebrian!</strong><br/><strong>Please see Resource Links below.</strong></div>
+<div aria-hidden="true" class="pulse-wrap"><div class="pulse-dot" id="pulse"></div></div>
+<div class="wrap">
+<div class="card">
+<div class="bd">
+<div class="row">
+<div>
+<label>Start Tempo</label>
+<input id="start" max="400" min="10" type="number" value="75"/>
+</div>
+<div>
+<label>Target Tempo</label>
+<input id="target" max="400" min="10" type="number" value="150"/>
+</div>
+</div>
+<div class="row">
+<div>
+<label>Step Size</label>
+<input id="step" max="50" min="1" type="number" value="5"/>
+</div>
+<div>
+<label>Cycles (1–15)</label>
+<input id="cycles" max="15" min="1" type="number" value="7"/>
+</div>
+</div><div class="row">
+<div>
+<label>Subdivision</label>
+<select id="subdiv">
+<option value="1">Quarters</option>
+<option value="2">8th's</option>
+<option value="3">Triplets</option>
+<option value="4">16ths</option>
+<option value="5">5's</option>
+<option value="6">6's</option>
+<option value="7">7's</option>
+</select>
+</div>
+<div style="grid-column:1 / -1;">
+<label>Volume: <span id="volVal">50</span></label>
+<input class="volrange" id="volume" max="100" min="0" step="1" type="range" value="50"/>
+</div>
+</div>
+<div class="btnsRow"><div class="btns">
+<button class="btn ghost" id="gen">Generate</button>
+<button class="btn ghost" id="save">Save Defaults</button>
+<button class="btn ghost" id="reset">Reset Defaults</button>
+<button aria-pressed="false" class="btn acc" id="startStopBtn">Start</button>
+</div><div class="keyLegend"><div><u>Keyboard shortcuts</u></div>
+  <ul style="list-style:none;margin:8px 0 0 0;padding:0;line-height:1.45;"><li><code>Space</code>&emsp;=&emsp;Start / Stop</li>
+    <li><code>↑</code>&emsp;/&emsp;<code>↓</code>&emsp;=&emsp;Prev&nbsp;/&nbsp;Next&nbsp;Step</li>
+    <li><code>Shift&nbsp;+&nbsp;←</code>&emsp;/&emsp;<code>Shift&nbsp;+&nbsp;→</code>&emsp;=&emsp;Prev&nbsp;/&nbsp;Next&nbsp;Cycle</li></ul></div></div>
+<div class="opts-inline" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><div class="silence-row"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-grid; grid-template-columns:auto 1fr; align-items:center; gap:6px;">
+<input aria-controls="silenceSubAbove" aria-label="Enable silencing subdivisions above BPM" id="silenceSubToggle" type="checkbox"/>
+<span>Silence subdivisions above</span>
+</label><div class="silence-pair"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px;">
+<input aria-label="BPM threshold for silencing subdivisions" disabled="" id="silenceSubAbove" min="1" step="1" style="max-width:100px;" type="number"/>
+</label><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px;">
+<input aria-label="Keep threshold linked to midpoint" checked="" id="silenceSubLinkMid" type="checkbox"/>
+<span>Link to midpoint</span>
+</label></div></div>
+<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="pulseToggle" type="checkbox"/>Visual pulse </label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="backwards" type="checkbox"/> Backwards mode</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="towardsCenter" type="checkbox"/> Build TOWARDS the Center</label><label style="white-space:nowrap; margin-left:12px;"><input id="fromCenter" type="checkbox"/> Build FROM the Center</label><label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="limitTarget" type="checkbox"/>Do not exceed Target Tempo</label>
+<label style="margin:0; font-size:12.5px; color:var(--text); display:flex; align-items:center"><input id="allowFullVolume" type="checkbox"/><span class="voltext">Allow full volume (louder clicks)</span><span class="volwarn">USE WITH CAUTION - NO HEADPHONES!</span></label>
+<label style="margin:0; font-size:12.5px; color:var(--text); display:inline-flex; align-items:center; gap:6px"><span>Theme:</span> <select id="theme">
+<option value="dark">Dark</option><option value="light">Light</option><option value="blue">Blue</option><option value="yellow">Yellow</option><option value="green">Green</option><option value="red">Red</option>
+</select><input id="themeToggle" style="display:none" type="checkbox"/></label>
+</div>
+</div>
+</div>
+<div class="card">
+<div class="bd">
+<div class="cyclebar">
+<div class="left">
+<button aria-label="Previous Cycle" class="btn ghost" id="prevCycle">◀ Cycle</button>
+<button aria-label="Next Cycle" class="btn ghost" id="nextCycle">Cycle ▶</button>
+</div>
+<div class="left" style="margin-top:6px;">
+<button aria-label="Previous Step" class="btn ghost" id="prevStepBtn">▲ Step</button>
+<button aria-label="Next Step" class="btn ghost" id="nextStepBtn">Step ▼</button>
+</div>
+<div class="right">
+<span class="cyclepill" id="cycleLabel">Cycle – / –</span>
+</div>
+</div>
+<div style="overflow:auto;max-height:58vh">
+<table id="tbl">
+<thead>
+<tr>
+<th>step</th>
+<th>segments</th>
+<th>tempo</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+<div class="legendMobile" id="legendMobileStatic"><div><u>Keyboard shortcuts</u></div>
+<ul style="list-style:none; margin:8px 0 0 0; padding:0;">
+<li style="margin:4px 0;; list-style:none"><code>Space</code> = Start / Stop</li>
+<li style="margin:4px 0;; list-style:none"><code>Shift</code> + <code>←</code> / <code>Shift</code> + <code>→</code> = Prev&nbsp;/&nbsp;Next&nbsp;Cycle</li>
+<li style="margin:4px 0;; list-style:none"><code>↑</code> / <code>↓</code> = Prev&nbsp;/&nbsp;Next&nbsp;Step</li>
+</ul></div>
+<div class="linksFoot" id="resourcesLinks"><span>Resource Links:</span>
+<span class="rl-chunk"><a href="https://nellsonic.github.io/icu-metronome/features.html" id="linkFeaturesGuide" rel="noopener" target="_blank">Features Guide</a> <span class="sep"><span aria-hidden="true" class="sep"> • </span></span></span> <span class="rl-chunk"><a href="https://www.youtube.com/watch?v=e08zFDnLOYY" id="linkWhyInterleaving" rel="noopener" target="_blank">Demonstration of the Process</a> <span class="sep"><span aria-hidden="true" class="sep"> • </span></span></span> <span class="rl-chunk"><a href="https://www.mollygebrian.com/" id="linkMollyGebrian" rel="noopener" target="_blank">Dr. Molly Gebrian</a> <span class="sep"><span aria-hidden="true" class="sep"> • </span></span></span> <span class="rl-chunk"><a aria-controls="feedbackMenu" aria-expanded="false" href="#" id="linkFeedback">Send feedback ▾</a></span><div class="fb-pop" hidden="" id="feedbackMenu" role="menu">
+<span class="rl-chunk"><a href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=andersclarinet@gmail.com&amp;su=ICU%20Metronome%20Feedback" id="fbGmail" rel="noopener" role="menuitem" target="_blank">Open in Gmail</a></span>
+<span class="rl-chunk"><a href="mailto:andersclarinet@gmail.com" id="fbMailto" role="menuitem">Default mail app</a></span><button id="fbCopy" role="menuitem" type="button">Copy email address</button>
+<span aria-live="polite" class="fb-copied" hidden="" id="fbCopied">Copied!</span>
+</div></div></div>
+</div>
+</div>
+<script>
+
+
+  // Track the most recent pointer type (mouse/touch/pen) to disambiguate hybrid devices
+  let lastPointerType = 'mouse';
+  window.addEventListener('pointerdown', (e) => { lastPointerType = e.pointerType || 'mouse'; }, {passive:true});
+// --- Mobile: force top-of-page on first open ---
+try{ if ('scrollRestoration' in history) { history.scrollRestoration = 'manual'; } }catch(_){}
+
+function scrollToTopStrong(){
+  try{
+    // Clear any accidental focus that could trigger mobile keyboard scroll
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+  }catch(_){}
+  try{
+    window.scrollTo(0,0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }catch(_){}
+  try{ requestAnimationFrame(()=>window.scrollTo(0,0)); }catch(_){}
+  setTimeout(()=>{ try{ window.scrollTo(0,0); }catch(_){}} , 180);
+  setTimeout(()=>{ try{ window.scrollTo(0,0); }catch(_){}} , 600);
+}
+
+// In case the page is restored from bfcache, re-assert top
+window.addEventListener('pageshow', (e)=>{
+  if (e && e.persisted) { scrollToTopStrong(); }
+}, { once:false });
+// --- end mobile scroll helpers ---
+
+const byId = id => document.getElementById(id);
+function log(){}
+function clearLog(){}
+
+// Stable versioned key: remembers settings across renames
+const SCHEMA_VERSION = 4;
+const STORE_KEY = "icu_metronome_confirmed_standard_v" + SCHEMA_VERSION;
+
+function saveSettings(){
+  const s = {
+    start:+byId('start').value||75,
+    target:+byId('target').value||150,
+    step:+byId('step').value||5,
+    cycles:Math.min(15, Math.max(1, +byId('cycles').value||7)),
+    subdiv:+byId('subdiv').value||1,
+    volume:Math.min(100, Math.max(0, +byId('volume').value||50)),
+    pulse: !!byId('pulseToggle').checked,
+    limitTarget: !!byId('limitTarget').checked,
+    startSeg: (function(){ 
+      const seg = byId('startSeg'); 
+      const cycEl = byId('cycles'); 
+      const cyc = cycEl ? +cycEl.value : 0; 
+      const val = seg && seg.value ? +seg.value : null; 
+      return (val === 1 || val === cyc) ? null : val; 
+    })(),
+    backwards: !!byId('backwards')?.checked,
+    towardsCenter: !!byId('towardsCenter')?.checked,
+    theme: (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark')),
+    allowFullVolume: !!byId('allowFullVolume')?.checked,
+    _v: SCHEMA_VERSION
+  };
+  localStorage.setItem(STORE_KEY, JSON.stringify(s));
+  return s;
+}
+
+function resetSettings(){ localStorage.removeItem(STORE_KEY); loadSettings(); generate(); }
+
+function loadSettings(){
+  let s;
+  try{ s = JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); }catch(_){
+    s = {};
+  }
+  if(s._v !== SCHEMA_VERSION) s = {};
+  byId('start').value  = s.start  ?? 75;
+  byId('target').value = s.target ?? 150;
+  byId('step').value   = s.step   ?? 5;
+  byId('cycles').value = s.cycles ?? 7;
+  byId('subdiv').value = s.subdiv ?? 1;
+  byId('volume').value = (s.volume ?? 50);
+  byId('volVal').textContent = String(Math.round(+byId('volume').value||50));
+  byId('pulseToggle').checked = !!s.pulse;
+  byId('limitTarget').checked = !!s.limitTarget;
+  if(byId('startSeg')) byId('startSeg').value = (s.startSeg ?? '');
+  if(byId('theme')){ let t=(s.theme||'dark'); if(t==='color') t='blue'; byId('theme').value=t; }
+if(byId('themeToggle')) byId('themeToggle').checked = (s.theme === 'light');
+  if(byId('allowFullVolume')) byId('allowFullVolume').checked = !!s.allowFullVolume;
+  if(byId('towardsCenter')) byId('towardsCenter').checked = !!s.towardsCenter;
+  applyTheme();
+}
+
+function applyTheme(){
+  try{
+    const v = (byId('theme') ? byId('theme').value : (byId('themeToggle')?.checked ? 'light' : 'dark'));
+    document.documentElement.setAttribute('data-theme', v);
+    document.body.classList.toggle('light', v==='light');
+  }catch(_){ document.body.classList.toggle('light', false); }
+}
+
+// Effective gain: limit to safe level unless full volume is allowed
+function setEffectiveGainFromSlider(){
+  const v = (+byId('volume').value||0);
+  const allowFull = !!byId('allowFullVolume')?.checked;
+  const raw = Math.max(0, Math.min(1, v/100));
+  const SAFE_ATTEN = 0.4; // approx inverse of louder sample
+  const eff = allowFull ? raw : (raw * SAFE_ATTEN);
+  if(masterGain) masterGain.gain.value = eff;
+}
+
+
+// UI
+byId('gen').addEventListener('click', ()=>{ generate({ preserveCycle:false }); });
+byId('save').addEventListener('click', ()=>{ saveSettings(); });
+byId('reset').addEventListener('click', resetSettings);
+byId('startStopBtn').addEventListener('click', toggle);
+byId('nextCycle').addEventListener('click', nextCycle);
+
+byId('prevStepBtn').addEventListener('click', prevStep);
+byId('nextStepBtn').addEventListener('click', nextStep);
+
+byId('prevCycle').addEventListener('click', prevCycle);
+
+byId('limitTarget').addEventListener('change', ()=>{ saveSettings(); generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); });
+byId('startSeg')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
+
+byId('startSeg')?.addEventListener('input', ()=>{
+  const val = +byId('startSeg').value;
+  const maxC = +byId('cycles').value;
+  if (val === 1 || val === maxC) {
+    byId('startSeg').value = '';
+  }
+});
+
+byId('backwards')?.addEventListener('change', ()=>{ saveSettings(); generate(); });
+
+  byId('towardsCenter')?.addEventListener('change', ()=>{ saveSettings(); generate({preserveCycle:true, preserveStep:true, suppressScroll:true}); });
+
+byId('themeToggle').addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
+byId('theme')?.addEventListener('change', ()=>{ applyTheme(); saveSettings(); });
+
+byId('allowFullVolume')?.addEventListener('change', ()=>{ saveSettings(); setEffectiveGainFromSlider(); });
+
+
+// Volume live
+byId('volume').addEventListener('input', ()=>{
+  const v = (+byId('volume').value||0);
+  byId('volVal').textContent = String(Math.round(v));
+  setEffectiveGainFromSlider();
+});
+byId('volume').addEventListener('change', ()=>{ byId('volume').blur(); });
+
+// Avoid select trapping space
+byId('subdiv').addEventListener('change', ()=>{ byId('subdiv').blur(); saveSettings(); if(isStarted) playCurrent(); });
+
+
+function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
+// Build contiguous block of size N around S by alternating add-right then add-left
+function buildCycleSetAround(T, N, S){
+  S = clamp(S,1,T);
+  let L=S, R=S;
+  while((R-L+1)<N){
+    const size = (R-L+1);
+    const wantRight = (size % 2) === 1; // 1->right,2->left,3->right...
+    if (wantRight){ if(R<T) R++; else if(L>1) L--; else break; }
+    else { if(L>1) L--; else if(R<T) R++; else break; }
+  }
+  const out=[]; for(let v=L; v<=R; v++) out.push(v);
+  return out;
+}
+
+// Helpers
+function segStr(a){ return a.join(","); }
+
+function compressSegments(segStr){
+  try{
+    if(!segStr || typeof segStr !== 'string') return segStr;
+    var parts = segStr.split(',').map(function(s){ return parseInt(s.trim(),10); }).filter(function(n){ return !isNaN(n); });
+    if(parts.length === 0) return segStr;
+    parts.sort(function(a,b){ return a-b; });
+    var out = [];
+    var runStart = parts[0];
+    var prev = parts[0];
+    for(var i=1;i<=parts.length;i++){
+      var v = parts[i];
+      if(i<parts.length && v === prev + 1){
+        prev = v;
+        continue;
+      }
+      // finalize the run [runStart..prev]
+      var runLen = (prev - runStart + 1);
+      if(runLen >= 4){
+        out.push(runStart + '-' + prev);
+      }else{
+        for(var k=runStart; k<=prev; k++){ out.push(String(k)); }
+      }
+      if(i<parts.length){ runStart = prev = v; }
+    }
+    return out.join(', ');
+  }catch(_){
+    return segStr;
+  }
+}
+
+
+// Overshoot-friendly tempo ladder
+function rangeTempos(start, target, step, limitToTarget){
+  const dir = target>=start ? 1 : -1;
+  const tempos = [];
+  let t = start;
+  tempos.push(t);
+
+  if(!limitToTarget){
+    // Original behavior with optional overshoot
+    while ((dir>0 && t + dir*step <= target) || (dir<0 && t + dir*step >= target)){
+      t += dir*step;
+      tempos.push(t);
+    }
+    // add one overshoot step if not landing exactly on target
+    if ((dir>0 && tempos[tempos.length-1] < target) || (dir<0 && tempos[tempos.length-1] > target)){
+      tempos.push(tempos[tempos.length-1] + dir*step);
+    }
+    return tempos;
+  }
+
+  // limitToTarget=true: reduce the last step if needed so we end exactly on target and never exceed it
+  while (true){
+    const next = t + dir*step;
+    if ((dir>0 && next > target) || (dir<0 && next < target)){
+      // next would overshoot; finish exactly at target if we're not already there
+      if (t !== target){ tempos.push(target); }
+      break;
+    } else {
+      t = next;
+      tempos.push(t);
+      if (t === target) break;
+    }
+  }
+  return tempos;
+}
+
+// Across pattern for cycles >=3
+function buildAcrossSeq(N){
+  const base = Array.from({length:N}, (_,i)=>i+1);
+  const seq = [base.slice(), [N]];
+  for(let k=N-1; k>=2; k--){
+    seq.push(Array.from({length:N-k+1}, (_,i)=>k+i));
+    seq.push([N]);
+  }
+  return seq;
+}
+
+// State
+let allRows = [];
+let cycleMap = new Map();
+let currentCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1);
+let currentIndexInCycle = 0;
+
+// Generator (confirmed standard rules)
+function generate(opts){
+  // ICU: default preserveCycle to true on first load if we have a saved cycle
+  if (!opts) opts = {};
+  if (opts.preserveCycle === undefined) { opts.preserveCycle = (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1); }
+
+
+  if(isStarted){ handoffPending = true; }
+// Capture previous context for preserving cycle/step
+  let _prevCycle = currentCycle;
+  
+  if (opts && opts.preserveCycle && Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1) { _prevCycle = window.__icuDesiredCycle; }
+let _prevTempo = null;
+  let _prevSegs = null;
+  if (opts && (opts.preserveCycle || opts.preserveStep) && Array.isArray(allRows) && allRows.length){
+    const _idxsPrev = (cycleMap && cycleMap.get && cycleMap.get(currentCycle)) || [];
+    const _gi = (_idxsPrev && _idxsPrev.length) ? _idxsPrev[Math.max(0, Math.min(currentIndexInCycle || 0, _idxsPrev.length-1))] : null;
+    if (_gi !== null && _gi !== undefined){
+      const _rPrev = allRows[_gi];
+      if (_rPrev){
+        _prevTempo = +_rPrev.tempo || null;
+        _prevSegs = (typeof _rPrev.segments === 'string') ? _rPrev.segments : null;
+      }
+    }
+  }
+  if (opts && opts.suppressScroll){ suppressScroll = true; }
+
+  clearLog();
+  const s = saveSettings();
+  const tempos = rangeTempos(s.start, s.target, s.step, !!s.limitTarget);
+  const finalTempo = tempos[tempos.length-1];
+  const rows = [];
+  cycleMap = new Map();
+
+  for(let c=1; c<=s.cycles; c++){ 
+    let stepIdx = 1; 
+
+    if(c===1){
+      // Only segment 1 = run full tempo list (may overshoot), no tail
+      for(let i=0;i<tempos.length;i++){ rows.push({cycle:c, step:stepIdx++, segments:"1", tempo:tempos[i]}); }
+    } else if(c===2){
+      const patt = [[1,2],[2]]; const L = patt.length;
+      for(let i=0;i<tempos.length;i++){ rows.push({cycle:c, step:stepIdx++, segments:segStr(patt[i%L]), tempo:tempos[i]}); }
+      // Tail at finalTempo until next [1,2], unless already on [1,2]
+      const j = (tempos.length - 1) % L;
+      const landed = patt[j];
+      const isAll = (landed.length===2 && landed[0]===1 && landed[1]===2);
+      if(!isAll){
+        let idx = (tempos.length) % L;
+        while(true){
+          const segs = patt[idx%L];
+          rows.push({cycle:c, step:stepIdx++, segments:segStr(segs), tempo:finalTempo});
+          if(segs.length===2 && segs[0]===1 && segs[1]===2) break;
+          idx++;
+        }
+      }
+    } else {
+      const N = c;
+      const baseAll = Array.from({length:N}, (_,i)=>i+1);
+      const across = buildAcrossSeq(N); const L = across.length;
+      for(let i=0;i<tempos.length;i++){ rows.push({cycle:c, step:stepIdx++, segments:segStr(across[i%L]), tempo:tempos[i]}); }
+      // Tail at finalTempo until next [1..N], unless we already landed there
+      const j = (tempos.length - 1) % L;
+      const landed = across[j];
+      const isAll = (landed.length===N && landed.every((v,ii)=>v===ii+1));
+      if(!isAll){
+        let idx = (tempos.length) % L;
+        while(true){
+          const segsArr = across[idx%L];
+          rows.push({cycle:c, step:stepIdx++, segments:segStr(segsArr), tempo:finalTempo});
+          const isAll2 = (segsArr.length===N && segsArr.every((v,ii)=>v===ii+1));
+          if(isAll2) break;
+          idx++;
+        }
+      }
+    }
+
+    // per-cycle index map
+    const idxs = [];
+    for(let i=0;i<rows.length;i++) if(rows[i].cycle===c) idxs.push(i);
+    cycleMap.set(c, idxs);
+  }
+
+  
+  
+  // === Start segment spec mapping (identity vs reversed per cycle) ===
+  if (byId('startSeg') && byId('startSeg').value){
+    const T = +byId('cycles').value || 1;
+    const startDisplay = clamp(+byId('startSeg').value, 1, T);
+    // Work in forward coordinates first; if backwards is on, convert start to forward coordinate
+    const backwardsOn = !!byId('backwards')?.checked;
+    const S_forward = backwardsOn ? (T - startDisplay + 1) : startDisplay;
+
+    // Precompute sets and mapping functions per cycle
+    const cycleSet = new Map();
+    const mapFn = new Map(); // v_local -> actual forward segment
+    for(let c=1; c<=T; c++){
+      const set = buildCycleSetAround(T, c, S_forward); // ascending forward numbers [L..R]
+      cycleSet.set(c, set);
+      const N = set.length;
+      const newIsRight = (c===1) ? true : (c % 2 === 0); // c=1 maps identity so solo stays S; from c=2 even:right, odd:left
+      if (newIsRight){
+        // identity: local 1..N -> set[0..N-1]
+        mapFn.set(c, (v)=> set[Math.max(1, Math.min(N, v)) - 1]);
+      } else {
+        // reversed: local 1..N -> set[N-v]
+        mapFn.set(c, (v)=> set[N - Math.max(1, Math.min(N, v))]);
+      }
+    }
+
+    // Remap each row's local indices to actual segments, then list ascending for play
+    for (let r of rows){
+      if (!r.segments || typeof r.segments !== 'string') continue;
+      const c = r.cycle;
+      const mapper = mapFn.get(c);
+      if (!mapper) continue;
+      const nums = r.segments.split(',').map(s=>+s.trim()).filter(n=>!isNaN(n));
+      let mapped = nums.map(v => mapper(v));
+      // Dedup + ascending listing for play
+      mapped = Array.from(new Set(mapped)).sort((a,b)=>a-b);
+      r.segments = mapped.join(',');
+    }
+  }
+
+  
+  // === Build-FROM-Center post-process (middle-out; local newest maps to center-out newest) ===
+  if (!!byId('fromCenter')?.checked) {
+    const T = +s.cycles || 1;
+    // Build-from-middle order across 1..T
+    const fromOrder = [];
+    if (T % 2) { const m = (T+1)>>1; fromOrder.push(m);
+      for (let k=1; fromOrder.length<T; k++){ const a=m+k, b=m-k; if (a<=T) fromOrder.push(a); if (b>=1 && fromOrder.length<T) fromOrder.push(b); } }
+    else { const L=T/2, U=L+1;
+      for (let k=0; fromOrder.length<T; k++){ const a=L-k, b=U+k; if (a>=1) fromOrder.push(a); if (b<=T && fromOrder.length<T) fromOrder.push(b); } }
+    for (let r of rows){
+      if (!r.segments || typeof r.segments !== 'string') continue;
+      const c = r.cycle;
+      const set = fromOrder.slice(0, c);         // oldest..newest for this cycle
+      const N = set.length;
+      const newest = set.slice().reverse();      // [N1, N2, ..., Nm]
+      const nums = r.segments.split(',').map(s=>+s.trim()).filter(n=>!isNaN(n));
+      // local v in [1..N]; default "across" uses N as newest → map v -> newest[N - v]
+      let mapped = nums.map(v => newest[N - Math.min(Math.max(1, v), N)]);
+      mapped = Array.from(new Set(mapped)).sort((a,b)=>a-b);
+      r.segments = mapped.join(',');
+    }
+  }
+
+  // === Build-Towards-Center post-process (maps local 1..c to centered forward segments) ===
+  if (!!byId('towardsCenter')?.checked) {
+    const T = +s.cycles || 1;
+    // precompute center order once: [1, T, 2, T-1, 3, T-2, ...]
+    const centerOrder = [];
+    for (let L=1, R=T; L<=R; L++, R--) {
+      centerOrder.push(L);
+      if (L !== R) centerOrder.push(R);
+    }
+    for (let r of rows) {
+      if (!r.segments || typeof r.segments !== 'string') continue;
+      const c = r.cycle;
+      const set = centerOrder.slice(0, c); // forward segment IDs for this cycle
+      const N = set.length;
+      const nums = r.segments.split(',').map(s=>+s.trim()).filter(n=>!isNaN(n));
+      // identity mapping: local v=1..N -> set[v-1]
+      let mapped = nums.map(v => set[Math.min(Math.max(1, v), N) - 1]);
+      mapped = Array.from(new Set(mapped)).sort((a,b)=>a-b);
+      r.segments = mapped.join(',');
+    }
+    // While towards-center is active, disable Start segment remap effects (it already remapped above).
+    // We do this by clearing any saved startSeg display value for runtime mapping only.
+    // (No persisted change; UI remains as-is.)
+  }
+// === Backwards post-process: mirror segment numbers and sort descending ===
+  if (!!s.backwards) {
+    const T = +s.cycles || 1;
+    for (let r of rows) {
+      if (r.segments && typeof r.segments === "string") {
+        const nums = r.segments.split(",").map(x => +x.trim()).filter(n => !isNaN(n));
+        const mapped = nums.map(v => (T - v + 1)).sort((a,b)=>a-b);
+        r.segments = mapped.join(",");
+      }
+    }
+  }
+
+  allRows = rows;
+  if(opts && (opts.preserveCycle || opts.preserveStep)){
+  const maxC = +byId('cycles').value || 1;
+  currentCycle = Math.max(1, Math.min(maxC, _prevCycle || 1));
+  currentIndexInCycle = 0;
+  if (opts.preserveStep){
+    const _idxsNow = cycleMap.get(currentCycle) || [];
+    if(_idxsNow.length){
+      let bestI = 0, bestD = Infinity, bestSegMatch = -1;
+      for(let i=0;i<_idxsNow.length;i++){
+        const rr = allRows[_idxsNow[i]];
+        const d = (_prevTempo==null) ? Infinity : Math.abs((+rr.tempo||0) - _prevTempo);
+        const segMatch = (_prevSegs && rr.segments===_prevSegs) ? 1 : 0;
+        if (d < bestD || (d===bestD && segMatch > bestSegMatch)){
+          bestD = d; bestSegMatch = segMatch; bestI = i;
+        }
+      }
+      currentIndexInCycle = bestI;
+    }
+  }
+} else {
+  const maxC = +byId('cycles').value || 1;
+  currentCycle = Math.max(1, Math.min(maxC, (Number.isInteger(window.__icuDesiredCycle) && window.__icuDesiredCycle >= 1 ? window.__icuDesiredCycle : 1)));
+  currentIndexInCycle = 0;
+}
+
+  renderCycle();
+if(opts && (opts.preserveCycle || opts.preserveStep)) setCurrentIndexInCycle(currentIndexInCycle);
+if(suppressScroll) suppressScroll=false;
+}
+
+function renderCycle(){
+  // Force the table container to the top on cycle changes
+  try{
+    const tbl = byId('tbl');
+    if (tbl){
+      const wrap = tbl.closest('div');
+      if (!suppressScroll && wrap && (wrap.scrollTop !== undefined)) wrap.scrollTop = 0;
+    }
+  }catch(_){/*noop*/}
+
+  const idxs = cycleMap.get(currentCycle) || [];
+  const tb = byId('tbody'); tb.innerHTML="";
+  idxs.forEach((gi, i)=>{
+    const r = allRows[gi];
+    const tr = document.createElement('tr');
+    tr.dataset.localIndex = i;
+    var _segC = compressSegments(r.segments);
+    tr.innerHTML = '<td>'+r.step+'</td><td title="'+r.segments+'">'+_segC+'</td><td>'+r.tempo+'</td>';
+     tr.addEventListener('click', ()=>{ setCurrentIndexInCycle(i); if(isStarted) playCurrent(); });
+    tr.addEventListener('dblclick', ()=>{ setCurrentIndexInCycle(i); if(!isStarted) start(); else playCurrent(); });
+    (function(){
+      // Touch behavior for row: ONLY long-press changes step; taps/scrolls do nothing.
+      // Desktop mouse: normal click/double-click works (handled by existing listeners).
+      let pressTimer=null, startX=0, startY=0, allowClick=false;
+      const LONG_MS=550, MOVE_PX=10;
+      function armAllowClick(){ allowClick = true; setTimeout(()=>allowClick=false, 0); }
+      function doStartOrJump(){ setCurrentIndexInCycle(i); if(!isStarted) start(); else playCurrent(); }
+      // On hybrid devices, only block clicks that came from touch; allow mouse clicks.
+      tr.addEventListener('click', (e)=>{
+        // If the last pointer was touch and we didn't arm via long-press, swallow the click
+        if ((lastPointerType !== 'mouse') && !allowClick) { e.preventDefault(); e.stopPropagation(); }
+      }, true);
+      tr.addEventListener('touchstart', (e)=>{
+        if(e.touches && e.touches.length>1) return; // ignore multi-touch
+        const t = e.touches? e.touches[0] : e;
+        startX = t.clientX; startY = t.clientY;
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(()=>{ pressTimer=null; armAllowClick(); doStartOrJump(); }, LONG_MS);
+      }, {passive:true});
+      tr.addEventListener('touchmove', (e)=>{
+        if(!pressTimer) return;
+        const t = e.touches? e.touches[0] : e;
+        if(Math.abs(t.clientX - startX) > MOVE_PX || Math.abs(t.clientY - startY) > MOVE_PX){
+          clearTimeout(pressTimer); pressTimer=null;
+        }
+      }, {passive:true});
+      tr.addEventListener('touchend', ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }, {passive:true});
+      tr.addEventListener('touchcancel', ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } }, {passive:true});
+    })();
+    tb.appendChild(tr);
+});
+  setCurrentIndexInCycle(currentIndexInCycle);
+  byId('cycleLabel').textContent = `Cycle ${currentCycle} / ${byId('cycles').value}`;
+}
+
+function setCurrentIndexInCycle(i){
+  const idxs = cycleMap.get(currentCycle) || [];
+  if(idxs.length===0) return;
+  i = Math.max(0, Math.min(idxs.length-1, i));
+  currentIndexInCycle = i;
+  const tb = byId('tbody');
+  tb.querySelectorAll('tr').forEach(tr=>tr.classList.remove('current'));
+  const tr = tb.querySelectorAll('tr')[i];
+  if(tr){ tr.classList.add('current'); if(!suppressScroll) tr.scrollIntoView({block:'nearest'}); }
+
+  try{ saveResumeState(); }catch(_){/*noop*/}
+}
+
+
+// Navigation
+function nextStep(){
+  try{ saveResumeState(); }catch(_){/*noop*/}
+  const idxs = cycleMap.get(currentCycle) || [];
+  if(idxs.length === 0) return;
+  if(currentIndexInCycle < idxs.length - 1){
+    setCurrentIndexInCycle(currentIndexInCycle + 1);
+  } else {
+    // at last step, move to first step of next cycle if possible
+    const total = +byId('cycles').value || 1;
+    if(currentCycle < total){
+      currentCycle++;
+      renderCycle();
+      setCurrentIndexInCycle(0);
+    }
+  }
+  if(isStarted) playCurrent();
+}
+function prevStep(){
+  try{ saveResumeState(); }catch(_){/*noop*/}
+  const idxs = cycleMap.get(currentCycle) || [];
+  if(idxs.length === 0) return;
+  if(currentIndexInCycle > 0){
+    setCurrentIndexInCycle(currentIndexInCycle - 1);
+  } else {
+    // at first step, move to last step of previous cycle if possible
+    if(currentCycle > 1){
+      currentCycle--;
+      renderCycle();
+      const prevIdxs = cycleMap.get(currentCycle) || [];
+      if(prevIdxs.length > 0){
+        setCurrentIndexInCycle(prevIdxs.length - 1);
+      }
+    }
+  }
+  if(isStarted) playCurrent();
+}
+function nextCycle(){
+  const total = +byId('cycles').value || 1;
+  if(typeof currentCycle !== 'number') currentCycle = 1;
+  if(currentCycle < total){
+    currentCycle++;
+    renderCycle();
+    // Always reset to Start Tempo (first step of the new cycle)
+    setCurrentIndexInCycle(0);
+    // Keep UI niceties
+    try{ scrollCycleHeaderIntoView(); }catch(_){}
+    try{ saveResumeState(); }catch(_){}
+    // Rebuild the beat loop at the Start Tempo immediately if running
+    if(isStarted){
+      try{ if(beatTimer) clearInterval(beatTimer); }catch(_){}
+      beatTimer = null;
+      playCurrent();
+    }
+  }
+}
+function prevCycle(){
+  if(typeof currentCycle !== 'number') currentCycle = 1;
+  if(currentCycle > 1){
+    currentCycle--;
+    renderCycle();
+    // Always reset to Start Tempo (first step of the new cycle)
+    setCurrentIndexInCycle(0);
+    // Keep UI niceties
+    try{ scrollCycleHeaderIntoView(); }catch(_){}
+    try{ saveResumeState(); }catch(_){}
+    // Rebuild the beat loop at the Start Tempo immediately if running
+    if(isStarted){
+      try{ if(beatTimer) clearInterval(beatTimer); }catch(_){}
+      beatTimer = null;
+      playCurrent();
+    }
+  }
+}
+
+// === Audio (onset-aligned, master gain, hardwired keys) ===
+let audioCtx=null, masterGain=null, mainBuf=null, subBuf=null, beatTimer=null, isStarted=false;
+let handoffPending=false;
+let suppressScroll=false;
+const MAIN_B64 = `UklGRkYEAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YSIEAAAAADRk1H7/f/9//3//f/9//38Rf4xlTQMwnWuBAIAAgACAAIAAgACAs4ApmWb5XWFSfv9//3//f/9//3//f4R/E2joCSSg84EAgACAAIAAgACAAIBGgLmW0PJPXsN9/3//f/9//3//f/9/7H9ranIQUKOJggCAAIAAgACAAIAAgACAepRK7OhaDH3/f/9//3//f/9//3/xf3prZBZDqPSDAIAAgACAAIAAgACAVoC+lBjneVTwev9//3//f/9//3//f1p/+mpDG+GuSIYAgACAAIAAgACAAID9gFuVkuKzTV94/3//f/9//3//f/9/o34+anEfyrUZiQCAAIAAgACAAIAAgMWBOJa13qtGS3X/f/9//3//f/9//3/GfUJp/iLmvHWMAIAAgACAAIAAgACAt4JTl3vbgT+kcUZ//3//f/9//3//f7x8AWjlJRTEaJCLgQCAAIAAgACAAIDdg7iY5dhVOGNthn3/f/9//3//f/9/eXt2ZiwoPMv6lIaDAIAAgACAAIAAgEGFbZro1j0xf2hKe/9//3//f/9//3/weZdk4Ck40jGaCIYAgACAAIAAgCuA84Z7nIDVXir2Ynt4YX//f/9//38zfxF4WGL8KvPYCaAsiYSBAIAAgACAhIEEie2eqtTNI9Fc/HRzff9//3//f6t9yHWuX4grVd96pgyNvIN4gACAU4BDg4qL0qFl1KMdGla0cOd6mX6Wf9d+rXv9coxcgytI5XKtwpGmhn2CVIEfgoeFoY41pbTU7RfjToprk3c9fJV9wXwYeZRv4FjvKrrq37Rnl3CKO4Wug4yEd4hnki6pjtW8EkZHZ2VIcw151nrveb91aGuYVMkpp++kvAqeSI/tiOWG04dGjAOXy63/1hYOZT8/XtVtyHQWdyN2a3FSZqFPFSj/853EtaVkldiNQos3jDCRnZwhswHZDApdNxFWBWcnbwdyEHHaayVg50nEJcP3rcxirvKcRZQakQ+Sepdlo0W5nduZBk4v7EytXtdnTWteasFktVhTQ9wi5fqv1P23GqaJnNGYuJl1n4yrTsDS3sQDXCfjQrRUjF6CYqRh01vQT9Y7WB9o/YTcasLqsOimx6KVo2qpO7VIyKvijwGsHx04D0kMU0dXiVbGUE5FWzMvG0r/D+R5zVq9k7NTrwSwn7WSwELRIucAAFEY1CzeOzhFXkm8SGNDHDngKV8WjAA06+7YQcuLwp6+NL81xKDNPdtF7BH/YhFAIVktKzW6OCo4nTM9K2If5xAsAeTxkORJ2pHTidAV0RrVT9w35hLyvv70CqAV3h1GI6wlEyWwIc4b8hPGCiwBDPgm8BTqLeaV5Dnl7+dk7BfyiPgR/xUFKwrtDSoQ2BAWEBYOLQurBwIEjACh/Wz7Fvqa+ef50PoX/Hf9uf6d/w==`;
+const SUB_B64  = `UklGRmQLAABXQVZFZm10IBAAAAABAAEAgLsAAAB3AQACABAAZGF0YUALAAD//wEAAgD9//z/AAAAAP////8BAAEA//8AAP7//f8CAAEA/v8CAP7/+P/8//7//v8CAAIAAQABAP///v8BAAEA//8DAAUA/v/+/wMAAQD7//z/AgADAPz/+v///wIAAgAAAAAA/v/6/wEABQD9////BAD+//z///8CAAcABAAEAAIA+v8AAAgA/v/7/wAAAQABAAEA/v/8/wAABAABAAQABAD1//b/AgD+//3/AQD//wAA/f/9/wYABgD///3//f/+//7/AgACAPz/AQADAP3/AQACAPv/+v/7/wUABgD7/wEABQD+/wAA///9////+f/6/wQABwADAPr/+v8DAAoACgD9//j//f8BAAsAAgDx/wAABQD7/wMAAAD3//3/AQAFAAEA+P/2//X/AQALAAYA/P/v//f/CgAGAAQA/f/2/wkABwD//wIA8v/6/wwABAACAPv//f8GAPX///8MAPn//v/6//f/DAABAP//BQD0/wEABAD5/wYA/f/4/wAA//8HAPv//f8MAP7/CQAEAOv/CAAHAPr/CwD8/wMAAwDq/wkAAgDs/wYAAQAHAAQA9P8VAP3/5f8CAOv///8aAPX/AgD8/+//DAD6////AADs/xIABAD//xwA5v/z/wcA4P8QAAkA6P8JAPb/EQAYAOP/DAAFAPj/GwDl//f/DwDk/xMA/f/t/yAA6/8IAB0A4f8eAAkA7/8oAOv/AgARAM3/GQD3/9n/OgD5/woALwDo/yAA3/+3/xkAyf/8/y8Ayf8xAAwAyP8bAKP/5v8xANX/xQDyAOAArAEIASwBVQFQAFUB0gCEAO8BJvyo/TYS5hnvBrrxAuVG32HnEvrrBycNeg+EDDwEnAF3B/gOLRUmGX0ZAxT6BaPtg9AIwpfNh+e/9TrzN+p94WDaadSW0wLhDgIvJ4E7BEJWQ+E9TDDAJIUiGiMDI5MlVie8IVIWFQmA9zDhzM/SyjDQcti63Fjdedym1fjIsb8bvobDwM+44dn4CBNzKOgzvjbENFUyVTPmOEE/YEJ8QvM/xzhEK74XDwJP76XhJNlf01XN48cnxK/AML1Lu4O8VcEyyb/TsuAb7wv/IxD9Hu8oeC+HNYs74j8cQkJDOEOHQG86BTHII5QStf8i7n7fOtXvz43Nmct3ynDLAs2fzOLKiMruzHXSk9vk5/T2UQjfGIQlki64NPo3izmzOkU7kDp0OPwz1CoQHbMNg/558UfoEuHT2o3W0dPb0TTQks7bzZ/OW9Hj1pDeI+hl9MsBWw6BGdAhJCZ4J34npSc/KZMrmiuPKMQjdBy/EkAJ7P889oDuYelD5dXhZN8U3c7av9ob3ufi9eY46gHuhPMy+sEAHQdXDfoSuBeMGnkavxiXF5kXLhhuGAMX+RJyDEEEt/tb9B3vRewv7ObuifJk9Cf0ZPOt8sjxRfEg8s30IPlB/gUDGAelCrAMCQyDCT0HOwYOBpQGAggeCSQIRwUHAi//E/0n/D78yPyn/VP+xf0v/Mn6B/rX+V/6a/t3/J79nv9XAisEAQSeAuoAEv/k/Tj+L/+t/yYAUAG6Ao4DbgOVAogBoADw/4X/XP9v/93/hgAAAUIBoAFFAiIDvwNbA/wBWQCr/sX86fqk+Vj5//kQ+wX86vz7/Sn/NQDUAAsBSAGnAdQB+AGQAn8DZgQ5Bc4F6QXVBdkFeQUtBDoCQgCx/rz9QP3F/CX8qftl+yX70/pr+hn6b/qn+wD91P2k/k4AkwIUBPoDOQNcA4QE2wUAB7MHUwfEBdoDbQKlASgBigCm/4f+OP3X+6X6wfka+cH46/hq+cr5Gfr7+qD8bv7l/xcBLgIiAwcEFQVBBggH+wZgBsIFPQW7BEMEnwNrAtEAgv/F/kH+mP3C/Or7Rvv3+uz6B/tM+8z7fPxX/V/+ev+GAIQBagIJA1EDbQN5A3oDjgPHA+oDtgNFA78C7gGcACL/9/0K/R78bftW+7/7Svzn/Kf9T/6P/ov+rv4e/7L/SQDiAH0BFQK5AmkDCAR6BLUEnQQUBEMDjgIUApkB4gD7/yv/rP5l/vX9M/1w/A78CfxF/OP81P2K/pL+Nv4b/nr+Ef+r/00A7QBfAa4BKwLyAqQD3gOlAyUDZAKJAfsA2QDJAIIAHQC6/0v/6/7T/u7+1f5Z/rD9Nv0t/bD9lP5i/6//eP8b//z+NP+t/1cAIAHAAe4BxAG6AQwCdgKEAhUCeAEbARsBKAHvAHgA/f+Q/yj/1f6s/p/+oP61/tn+8P7l/sj+rf6a/pf+wv40/93/jAAVAWwBkAGAAUUB+AC7AK0A0gD+AAAB3ACzAJEAYwAhAMn/X/8E/9n+0P7L/tj+Av8X//n+5P4T/2T/qv/w/z8AdwCWAMAAAwFMAZkB2gHXAXUB7QCPAHwAoADPANoAqQBQAOn/iP9B/xz///7M/o3+Yv5H/iX+A/4H/kP+qP4Y/4D/3v9FAMMARQGdAcIB4QEYAkwCYwJuAnYCVgL6AYkBGAGTAAEAlf9c/yT/1v6N/lj+Kf4B/vD9+f0X/kT+av5z/nb+of7+/mP/pf/G//P/WADwAIgB+wFOAo0CrAKUAkkC8AGwAYoBWQEGAakAUwD7/5//VP8U/83+k/6G/o7+fP5V/kD+RP5V/n/+yv4c/13/nf/1/10AuAD9AD8BiQHAAcgBrwGgAaEBmwF+AU8BDQG/AHgAQQAQANj/nP9n/0r/Q/8s/+L+gf5G/jv+Pv5M/n/+zf4Z/2X/vv8PADcARABdAI4AzAAeAY4B7AH2Aa4BWwEjAfQAzAC7AKMAUADe/5v/jP9y/zb/AP/l/tD+tf6p/sD+9f4h/yb/H/88/37/wv8PAHMAwwDPALsAxQDjAPIADAFGAXMBagFLAUQBRwExAf0AtQBlACQAEQAfAB0A7f+j/1//Hf/V/p3+l/63/tD+1P7c/vr+Hv8z/0f/bv+k/8n/0v/k/x8AZwCMAJUAsADmABUBKQElAQ0B7QDPALMAjwBuAGUAdACOAKkAvACuAHUAHwDN/57/mf+k/5v/ev9a/0r/SP9I/zf/Df/i/tP+2f7h/vb+Lf9//8X/7P/+/xoAVQCmAOwAHgFNAXgBhwFvAUcBJgEOAfcA0gCXAFUAKAAcABkA/v+7/1//DP/Y/sL+wv7a/gL/Jf89/1b/c/+L/5r/pP+v/8j/+/82AFYAXgB2AKkA1ADdANQA0gDZANcAwgCnAJMAfABWACwAGQAaABEA9P/S/6//fv8//xH/EP80/1n/bf92/3n/fP+R/7v/4P/u////LgBlAI8AuQDlAPQA1wC1AKUAmACIAIIAfgBiACsA+f/e/9b/zv++/67/p/+g/4v/eP+F/6X/r/+i/6L/vv/j/woAMwBMAEEAHgAMABYALABAAFEAWwBOAC0ADwACAPz/9//5/wUADQANABIAFwAHAN//uf+s/7H/vP/F/87/2f/n//T/+//9//7//f8CABAAHgAdABIADQATABsAHAAcACEAKgAtACYAHQAbABgADwAHAAAA7//Y/8//2P/h/+D/4P/m/+j/6f/u//P/8v/y//7/DwAZABUACgAAAPr/9v/x//T/BgAgAC8ALAAfABMADwAOAAcA/P/y//D/8f/z//T/9P/y//H/8f/u/+7/+f8GAAgAAgD+//v/8v/q/+r/8f/5/wMAEAAZABoAFAAQAA8ADgAIAAAA/v8CAAgACQAFAPz/9f/y//P/9P/3//3/AwADAP//+v/0//D/7//z//r/AgAIAAgABwAGAAgACAAHAAYABAACAAMABgAJAAsADQANAAkAAQD7//j/9//5//z//P/5//X/9P/0//T/9v/4//r//P8=`;
+let onsetMainMs = 0, onsetSubMs = 0, alignMs = 0;
+
+async function ensureAudio(){
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if (window.installAudioGuards) { installAudioGuards(); }
+    try { audioCtx.resume && audioCtx.resume(); } catch(_){}
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+    try{ setEffectiveGainFromSlider(); }catch(_){ masterGain.gain.value = Math.max(0, Math.min(1, ((+document.getElementById('volume')?.value||50)/100) * (document.getElementById('allowFullVolume')?.checked ? 1 : 0.4) )); }
+
+  }
+  if(audioCtx.state === "suspended"){ try{ await audioCtx.resume(); }catch(_ ){} }
+}
+async function decodeB64ToBuffer(b64){
+  if(!b64) return null;
+  try{
+    const bin = atob(b64.trim());
+    const arr = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+    const buf = arr.buffer;
+    return await new Promise((resolve,reject)=>{
+      try{ audioCtx.decodeAudioData(buf.slice(0), b=>resolve(b), e=>reject(e)); }
+      catch(e){ reject(e); }
+    });
+  }catch(_ ){ return null; }
+}
+function detectOnsetMs(buf){
+  try{
+    const ch = buf.getChannelData(0);
+    let maxAbs = 0;
+    for(let i=0;i<ch.length;i++){ const a = Math.abs(ch[i]); if(a>maxAbs) maxAbs=a; }
+    const thr = Math.max(0.02, maxAbs*0.15);
+    for(let i=0;i<ch.length;i++){ if(Math.abs(ch[i]) >= thr) return (i / buf.sampleRate) * 1000.0; }
+  }catch(_ ){}
+  return 0;
+}
+async function loadBuffers(){
+  mainBuf = await decodeB64ToBuffer(MAIN_B64);
+  subBuf  = await decodeB64ToBuffer(SUB_B64);
+  onsetMainMs = mainBuf ? detectOnsetMs(mainBuf) : 0;
+  onsetSubMs  = subBuf  ? detectOnsetMs(subBuf)  : 0;
+  alignMs = Math.max(onsetMainMs, onsetSubMs);
+}
+// Fallback: if subdivision sample failed to decode, reuse main click so no beep
+if(!subBuf && mainBuf){
+  console.warn('[ICU] Subdivision sample failed to load; falling back to main click.');
+  subBuf = mainBuf;
+  onsetSubMs = onsetMainMs;
+}
+
+function playBuf(buf){
+  if(buf){
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(masterGain);
+    src.start();
+  } else if (mainBuf) {
+    // Last-resort: if we somehow got null here, use main click
+    const src = audioCtx.createBufferSource();
+    src.buffer = mainBuf;
+    src.connect(masterGain);
+    src.start();
+  } else {
+    // Only beep if we have no decoded buffers at all
+    const osc = audioCtx.createOscillator();
+    osc.type = "square"; osc.frequency.value = 2000;
+    osc.connect(masterGain); osc.start(); setTimeout(()=>osc.stop(), 20);
+  }
+}
+function msPerBeat(bpm, sub){ return 60000/(bpm*sub); }
+
+async function playCurrent(){
+  const idxs = cycleMap.get(currentCycle) || [];
+  if(idxs.length===0) return;
+  await ensureAudio();
+  if(!mainBuf || !subBuf) await loadBuffers();
+  if(beatTimer) clearInterval(beatTimer);
+  const r = allRows[idxs[currentIndexInCycle]];
+  const subdiv = Math.max(1, +byId('subdiv').value||1);
+  const interval = msPerBeat(r.tempo, subdiv);
+  clearLog(); log(`▶ Cycle ${r.cycle} = Step ${r.step} @ ${r.tempo} = segs [${r.segments}] = subdiv=${subdiv}`);
+
+  let tickCount = 0;
+  beatTimer = setInterval(()=>{
+    tickCount++;
+    const isMain = ((tickCount-1) % subdiv) === 0;
+    // next-beat handoff
+if(isMain && handoffPending){ handoffPending=false; if(beatTimer){ clearInterval(beatTimer); beatTimer=null; } setTimeout(()=>{ try{ playCurrent(); }catch(_){/*noop*/} }, 0); return; }
+if(isMain){
+      if(byId('pulseToggle').checked){
+        const pulseEl = document.getElementById('pulse');
+        pulseEl.classList.remove('boom'); void pulseEl.offsetWidth; pulseEl.classList.add('boom');
+      }
+      const delay = Math.max(0, alignMs - onsetMainMs);
+      if(delay>0) setTimeout(()=>playBuf(mainBuf), delay); else playBuf(mainBuf);
+    } else {
+      const delay = Math.max(0, alignMs - onsetSubMs);
+      if(delay>0) setTimeout(()=>{ if(!window.__silenceSubShouldMute || !window.__silenceSubShouldMute(r.tempo)) if(!window.__silenceSubShouldMute || !window.__silenceSubShouldMute(r.tempo)) playBuf(subBuf); }, delay); else if(!window.__silenceSubShouldMute || !window.__silenceSubShouldMute(r.tempo)) playBuf(subBuf);
+    }
+  }, interval);
+}
+function stopAll(){ if(beatTimer) clearInterval(beatTimer); beatTimer = null; log("⏹ Stopped."); }
+async function start(){
+  await ensureAudio();
+  isStarted = true;
+  updateStartStopUI();
+  playCurrent(); // now Start actually plays
+}
+
+function updateStartStopUI(){
+  var btn = byId('startStopBtn');
+  var gen = byId('gen');
+  if(btn){
+    btn.textContent = (isStarted ? 'Stop' : 'Start');
+    btn.classList.add('acc');
+    btn.classList.remove('ghost');
+    btn.setAttribute('aria-pressed', isStarted ? 'true' : 'false');
+  }
+  if(gen){
+    gen.classList.add('ghost');
+    gen.classList.remove('acc');
+    if(isStarted){
+      gen.disabled = false;
+      gen.setAttribute('aria-disabled','false');
+    } else {
+      gen.disabled = false;
+      gen.setAttribute('aria-disabled','false');
+    }
+  }
+}
+
+function stop(){ stopAll(); isStarted = false; updateStartStopUI(); }
+function toggle(){ if(isStarted) stop(); else start(); }
+
+// Keys
+function keyNav(e){
+  const el = e.target;
+  const tag = (el && el.tagName || '').toLowerCase();
+  const type = (el && el.type || '').toLowerCase();
+
+  // Spacebar always controls transport, regardless of focus
+  if (e.key === ' ' || e.code === 'Space') {
+    // Prevent default so focused inputs (checkbox, number, range, select) don't hijack Space
+    if (tag === 'select' || tag === 'textarea' || (tag === 'input' && (type === 'checkbox' || type === 'range' || type === 'number'))) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    toggle();
+    return;
+  }
+
+  // Arrow navigation unless composing or typing in a textarea (none here)
+  if (e.isComposing) return;
+  if (tag === 'textarea') return;
+
+  if (e.key === 'ArrowDown'){ e.preventDefault(); nextStep(); }
+  else if (e.key === 'ArrowUp'){ e.preventDefault(); prevStep(); }
+  else if (e.key === 'ArrowLeft') { if (!e.shiftKey) { e.preventDefault(); return; } e.preventDefault(); prevCycle(); }
+  else if (e.key === 'ArrowRight') { if (!e.shiftKey) { e.preventDefault(); return; } e.preventDefault(); nextCycle(); }
+}
+
+window.addEventListener('load', ()=>{ loadSettings(); applyTheme(); setEffectiveGainFromSlider(); scrollToTopStrong(); updateStartStopUI(); 
+  try{ restoreResumeOnLoad(); }catch(_){/*noop*/}
+});
+window.addEventListener('beforeunload', ()=>{ try{ saveSettings(); saveResumeState(); }catch(_){} });
+window.addEventListener('keydown', keyNav, true);
+window.addEventListener('keyup', keyUpBlock, true);
+
+function keyUpBlock(e){
+  const el = e.target;
+  const tag = (el && el.tagName || '').toLowerCase();
+  const type = (el && el.type || '').toLowerCase();
+  if (e.key === ' ' || e.code === 'Space'){
+    if (tag === 'select' || (tag === 'input' && (type === 'checkbox' || type === 'range' || type === 'number'))) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+}
+
+
+// Force-safe defaults on every open
+window.addEventListener('load', ()=>{
+  try{
+    const vol = document.getElementById('volume');
+    const volVal = document.getElementById('volVal');
+    if (vol){ vol.value = 50; }
+    if (volVal){ volVal.textContent = '50'; }
+    const allow = document.getElementById('allowFullVolume');
+    if (allow){ allow.checked = false; }
+    // Update gain display/state
+    try{
+      if (typeof setEffectiveGainFromSlider === 'function'){ setEffectiveGainFromSlider(); }
+      else if (typeof masterGain !== 'undefined' && masterGain){ masterGain.gain.value = 0.5; }
+    }catch(_){}
+  }catch(_){}
+});
+
+
+window.addEventListener('resize', ()=>{ placeLegendMobile(); });
+
+
+
+// --- Resource Links: wrap items so multi-line rows align under the first item (desktop) ---
+(function(){
+  const cont = document.getElementById('resourcesLinks');
+  if(!cont) return;
+  const label = cont.querySelector('span:first-child');
+  if(!label) return;
+  if(document.getElementById('resourcesItems')) return; // already applied
+
+  // Collect direct children after the label that are not the feedback popover
+  const kids = Array.from(cont.children);
+  const startIdx = kids.indexOf(label) + 1;
+  const toWrap = kids.slice(startIdx).filter(el => el.id !== 'feedbackMenu');
+
+  const wrap = document.createElement('span');
+  wrap.id = 'resourcesItems';
+  // Move items into the wrapper
+  toWrap.forEach(el => wrap.appendChild(el));
+  label.insertAdjacentElement('afterend', wrap);
+})();
+
+
+function saveResumeState(){
+  try{
+    const key = STORE_KEY;
+    const s = JSON.parse(localStorage.getItem(key)||"{}");
+    const idxs = cycleMap && cycleMap.get && cycleMap.get(currentCycle) || [];
+    let r = null;
+    if (Array.isArray(idxs) && idxs.length && Array.isArray(allRows) && allRows.length){
+      const gi = idxs[Math.max(0, Math.min(currentIndexInCycle||0, idxs.length-1))];
+      r = allRows[gi] || null;
+    }
+    s.resumeCycle = currentCycle || 1;
+    s.resumeIndex = currentIndexInCycle || 0;
+    s.resumeTempo = r && +r.tempo || null;
+    s.resumeSegs  = r && r.segments || null;
+    localStorage.setItem(key, JSON.stringify(s));
+  }catch(_){/*noop*/}
+}
+
+
+function restoreResumeOnLoad(){
+  try{
+    const key = STORE_KEY;
+    const s = JSON.parse(localStorage.getItem(key)||"{}");
+    const cSaved = +s.resumeCycle || 1;
+    // ICU: ensure preserveCycle honors saved cycle on iOS
+    try { if (Number.isInteger(cSaved) && cSaved >= 1) { currentCycle = cSaved; } } catch(_) {}
+    const iSaved = +s.resumeIndex || 0;
+
+    // If no plan yet, build one first (preserve cycle/step); suppress scroll to avoid jumps
+    const idxs0 = (cycleMap && cycleMap.get && cycleMap.get(cSaved)) || [];
+    if (!Array.isArray(idxs0) || idxs0.length === 0){
+      try{ generate({ preserveCycle:true, preserveStep:true, suppressScroll:true }); }catch(_){
+        try{ generate(); }catch(_2){}
+      }
+    }
+
+    const maxC = +byId('cycles').value || 1;
+    let c = cSaved;
+    if (c < 1) c = 1; if (c > maxC) c = maxC;
+
+    currentCycle = c;
+    renderCycle();
+    const idxs = cycleMap.get(currentCycle) || [];
+    let i = iSaved;
+    if (i < 0) i = 0; if (i >= idxs.length) i = Math.max(0, idxs.length-1);
+    setCurrentIndexInCycle(i);
+  }catch(_){/*noop*/}
+}
+
+</script>
+<script>
+// --- Feedback popover script ---
+(() => {
+  const toggle = document.getElementById('linkFeedback');
+  const menu = document.getElementById('feedbackMenu');
+  const btnCopy = document.getElementById('fbCopy');
+  const copied = document.getElementById('fbCopied');
+  if (!toggle || !menu) return;
+
+  function openMenu(){
+  menu.hidden = false;
+  toggle.setAttribute('aria-expanded', 'true');
+
+  const r = toggle.getBoundingClientRect();
+  const margin = 8;
+
+  // Measure menu size now that it's visible
+  const mw = menu.offsetWidth || 240;
+  const mh = menu.offsetHeight || 160;
+
+  // Horizontal position: align left edge, clamped to viewport
+  let left = r.left;
+  const maxLeft = window.innerWidth - mw - margin;
+  if (left > maxLeft) left = Math.max(margin, maxLeft);
+  if (left < margin) left = margin;
+
+  // Prefer opening UP above the link
+  let top = r.top - mh - 6;
+
+  // If not enough space above, fall back to below
+  if (top < margin) {
+    const below = r.bottom + 6;
+    const fitsBelow = below + mh + margin <= window.innerHeight;
+    top = fitsBelow ? below : Math.max(margin, window.innerHeight - mh - margin);
+  }
+
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+}
+  function closeMenu() {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  toggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (menu.hidden) openMenu(); else closeMenu();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target === toggle || menu.contains(e.target)) return;
+    closeMenu();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+  });
+
+  btnCopy?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText('andersclarinet@gmail.com');
+      copied.hidden = false;
+      setTimeout(() => copied.hidden = true, 1200);
+    } catch (err) {
+      // Fallback: select text in a prompt
+      window.prompt('Copy email address:', 'andersclarinet@gmail.com');
+    }
+  });
+})();
+</script>
+<script>
+// ===== ICU Unified Touch Overlay — Hybrid‑Safe Final =====
+(function(){
+  // We react strictly to *touch pointers* via Pointer Events.
+  // Mouse/pen clicks remain untouched.
+  function q(sel){ return document.querySelector(sel); }
+  function qa(sel){ return document.querySelectorAll(sel); }
+  function byId(id){ return document.getElementById(id); }
+  
+
+// Smoothly scroll the cycle header into view (top of viewport)
+
+// Smoothly scroll the cycle header to the very top of the usable viewport.
+function scrollCycleHeaderIntoView(){
+  try{
+    const header = document.getElementById('cycleLabel');
+    const wrapper = (typeof getWrapper === 'function') ? getWrapper() : null;
+    // Always reset the internal table wrapper to top as well
+    try{
+      if (wrapper && typeof wrapper.scrollTop === 'number') wrapper.scrollTop = 0;
+    }catch(_){/*noop*/}
+
+    if (!header) {
+      // Fallback: hard jump to page top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Compute obstruction from sticky headers, etc., if available
+    let obstruction = 0;
+    try{
+      if (typeof computeObstructionTop === 'function'){
+        obstruction = computeObstructionTop() || 0;
+      }
+    }catch(_){ obstruction = 0; }
+
+    const rect = header.getBoundingClientRect();
+    const absoluteTop = rect.top + window.scrollY;
+    const targetTop = Math.max(0, Math.round(absoluteTop - obstruction - 6)); // small breathing room
+    window.scrollTo({ top: targetTop, behavior: 'smooth' });
+  }catch(_){ /* noop */ }
+}
+);
+    }else{
+      // Fallback: jump to top
+      window.scrollTo(0, 0);
+    }
+  }catch(_){/*noop*/}
+}
+
+function now(){ return Date.now ? Date.now() : +new Date(); }
+
+  // ---------- Persistence (multi‑backend + URL hash) ----------
+  var KEY='icu:lastIndex';
+  function canUse(store){ try{ var t='__t'+Math.random(); store.setItem(t,'1'); store.removeItem(t); return true; }catch(e){ return False; } }
+  var stor=null; try{ stor = canUse(localStorage) ? localStorage : (canUse(sessionStorage) ? sessionStorage : null); }catch(e){ stor=null; }
+  function saveIndex(i){
+    try{ if(stor) stor.setItem(KEY, String(i)); }catch(e){}
+    try{ document.cookie = KEY + '=' + encodeURIComponent(String(i)) + '; path=/; max-age=31536000'; }catch(e){}
+    try{ var u = new URL(location.href); u.hash = 's='+String(i); history.replaceState(null,'',u.toString()); }catch(_){ location.hash='s='+String(i); }
+  }
+  function loadFromHash(){ try{ var h=(location.hash||'').replace(/^#/,''); if(!h) return null; var m=h.match(/(?:^|&)s=(\d+)/); return m? parseInt(m[1],10): null; }catch(e){ return null; } }
+  function loadIndex(){
+    var v=null; try{ v = stor? stor.getItem(KEY): null; }catch(e){}
+    if(v==null){ try{ var m=document.cookie.match(new RegExp('(?:^|; )'+KEY.replace(/[-.$?*|{}()[\]\\/+^]/g,'\\$&')+'=([^;]*)')); v = m ? decodeURIComponent(m[1]) : null; }catch(e){} }
+    if(v==null) v = loadFromHash();
+    var n = v==null ? null : parseInt(v,10); return isNaN(n)? null : n;
+  }
+
+  // ---------- Index helpers ----------
+  function getIndexFromRow(tr){
+    if(!tr) return 0;
+    if(tr.dataset && tr.dataset.i){ var n=parseInt(tr.dataset.i,10); if(!isNaN(n)) return n; }
+    var rows = tr.parentElement ? tr.parentElement.querySelectorAll('tr') : [];
+    for(var i=0;i<rows.length;i++){ if(rows[i]===tr) return i; }
+    return 0;
+  }
+  function setIndex(i){
+    if(typeof window.setCurrentIndexInCycle === 'function'){ try{ window.setCurrentIndexInCycle(i); return; }catch(e){} }
+    // Fallback: move .current class
+    var rows = qa('#tbl tbody tr');
+    for(var j=0;j<rows.length;j++){
+      var r=rows[j];
+      if(r.classList){ r.classList.toggle('current', j===i); }
+      else{ r.setAttribute('class', j===i ? 'current' : ''); }
+    }
+  }
+  function scrollToIndex(i){
+    var rows = qa('#tbl tbody tr'); var tr = rows[i];
+    if(!tr) return;
+    try{ tr.scrollIntoView({block:'center', inline:'nearest'}); }catch(_){ try{ tr.scrollIntoView(); }catch(__){} }
+  }
+  function activateNow(){
+    try{
+      if (typeof window.isStarted === 'boolean' && window.isStarted){
+        if (typeof window.playCurrent === 'function') window.playCurrent();
+      } else if (typeof window.start === 'function'){
+        window.start();
+      }
+    }catch(e){}
+  }
+
+  // ---------- Touch handler (Pointer Events) ----------
+  function installTouch(){
+    var tbody = q('#tbl tbody');
+    if(!tbody || tbody.__icuUnifiedTouch__) return;
+    tbody.__icuUnifiedTouch__ = true;
+
+    // CSS nudge to improve taps (no effect on desktop clicks)
+    try{
+      var st = document.createElement('style');
+      st.textContent = "#tbl tbody tr{-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;cursor:pointer;}";
+      document.head.appendChild(st);
+    }catch(e){}
+
+    var downInfo = {id:null, x:0, y:0, row:null, at:0};
+    var MOVE=10, LONG=420, timer=null;
+
+    tbody.addEventListener('pointerdown', function(e){
+      if(e.pointerType !== 'touch') return; // ignore mouse/pen
+      var tr = e.target.closest ? e.target.closest('tr') : null; if(!tr) return;
+      downInfo.id = e.pointerId; downInfo.x=e.clientX; downInfo.y=e.clientY; downInfo.row=tr; downInfo.at=now();
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        timer=null;
+        var idx=getIndexFromRow(downInfo.row);
+        setIndex(idx); saveIndex(idx); scrollToIndex(idx); activateNow();
+      }, LONG);
+    }, {passive:true});
+
+    tbody.addEventListener('pointermove', function(e){
+      if(e.pointerType !== 'touch') return;
+      if(timer){
+        if(Math.abs(e.clientX - downInfo.x) > MOVE || Math.abs(e.clientY - downInfo.y) > MOVE){
+          clearTimeout(timer); timer=null;
+        }
+      }
+    }, {passive:true});
+
+    tbody.addEventListener('pointerup', function(e){
+      if(e.pointerType !== 'touch') return;
+      if(timer){ // quick tap
+        clearTimeout(timer); timer=null;
+        if(downInfo.row){
+          var idx=getIndexFromRow(downInfo.row);
+          setIndex(idx); saveIndex(idx); scrollToIndex(idx); activateNow();
+        }
+      }
+      downInfo.id=null; downInfo.row=null;
+    }, {passive:true});
+
+    tbody.addEventListener('pointercancel', function(e){
+      if(e.pointerType !== 'touch') return;
+      if(timer){ clearTimeout(timer); timer=null; }
+      downInfo.id=null; downInfo.row=null;
+    }, {passive:true});
+  }
+
+  // ---------- Save on selection change (regardless of input type) ----------
+  function observeSaves(){
+    var tb = q('#tbl tbody'); if(!tb || tb.__icuSaveUnified__) return;
+    try{
+      var mo = new MutationObserver(function(muts){
+        for(var k=0;k<muts.length;k++){
+          var m=muts[k];
+          if(m.type==='attributes' && m.attributeName==='class' && m.target.classList && m.target.classList.contains('current')){
+            var rows = qa('#tbl tbody tr');
+            for(var j=0;j<rows.length;j++){ if(rows[j]===m.target){ saveIndex(j); break; } }
+          }
+        }
+      });
+      mo.observe(tb, {attributes:true, subtree:true, attributeFilter:['class']});
+      tb.__icuSaveUnified__ = true;
+    }catch(e){}
+  }
+
+  // ---------- Restore after rows exist ----------
+  function restoreWhenReady(){
+    var root = byId('tbl') || document.body;
+    var did=false;
+    try{
+      var mo = new MutationObserver(function(){
+        installTouch(); observeSaves();
+        if(!did && qa('#tbl tbody tr').length>0){
+          var idx = loadIndex();
+          if(idx!=null){ setIndex(idx); scrollToIndex(idx); }
+          did=true;
+        }
+      });
+      mo.observe(root, {subtree:true, childList:true});
+    }catch(e){ installTouch(); observeSaves(); }
+    // Also attempt a delayed restore in case rows are already present
+    setTimeout(function(){
+      installTouch(); observeSaves();
+      if(!did && qa('#tbl tbody tr').length>0){
+        var idx = loadIndex(); if(idx!=null){ setIndex(idx); scrollToIndex(idx); }
+      }
+    }, 400);
+  }
+
+  // ---------- Kick off ----------
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', restoreWhenReady);
+  else restoreWhenReady();
+})();
+</script>
+<!-- UNIVERSAL: header/reader-aware scroll using CSS scroll-margin + auto obstruction detection -->
+<style>
+  /* Make every table row respect a dynamic top margin for scrollIntoView */
+  #tbl tbody tr { scroll-margin-top: var(--obstructionTop, 0px); }
+</style>
+<script>
+(function(){
+  function getWrapper(){
+    const tbl = document.getElementById('tbl');
+    if (!tbl) return null;
+    const withOverflow = tbl.closest('div[style*="overflow:auto"]');
+    return withOverflow || tbl.parentElement;
+  }
+
+  // Compute how much space at the top is occupied by sticky/fixed UI that could cover row 1
+  function computeObstructionTop() {
+    const wrapper = getWrapper();
+    if (!wrapper) return 0;
+    const wRect = wrapper.getBoundingClientRect();
+
+    // Candidates: table THEAD, cyclebar, cycle label, any sticky/fixed element overlapping horizontally
+    const candidates = [];
+    const tbl = document.getElementById('tbl');
+    if (tbl && tbl.tHead) candidates.push(tbl.tHead);
+    const maybe = [document.querySelector('.cyclebar'), document.querySelector('#cycleLabel')];
+    maybe.forEach(el => { if (el) candidates.push(el); });
+
+    // Also scan DOM for potential sticky/fixed elements
+    const all = Array.from(document.querySelectorAll('body *'));
+    for (const el of all){
+      const cs = window.getComputedStyle(el);
+      if (cs.position === 'sticky' || cs.position === 'fixed'){
+        candidates.push(el);
+      }
+    }
+
+    let obstruction = 0;
+    const wLeft = wRect.left, wRight = wRect.right;
+    for (const el of candidates){
+      if (!el || !el.getBoundingClientRect) continue;
+      const r = el.getBoundingClientRect();
+      // Horizontal overlap with wrapper?
+      const overlapX = Math.min(wRight, r.right) - Math.max(wLeft, r.left);
+      if (overlapX > 0) {
+        // Only consider elements that sit above or touching wrapper top
+        if (r.bottom > wRect.top && r.top <= wRect.top + 80 /* small tolerance */){
+          obstruction = Math.max(obstruction, Math.ceil(r.bottom - wRect.top));
+        }
+      }
+    }
+    // Clamp to non-negative
+    return Math.max(0, obstruction);
+  }
+
+  function setObstructionVar(){
+    const px = computeObstructionTop();
+    document.documentElement.style.setProperty('--obstructionTop', px + 'px');
+  }
+
+  function scrollRow1IntoView() {
+    const tbl = document.getElementById('tbl');
+    if (!tbl) return;
+    const wrapper = getWrapper();
+    const row1 = tbl.tBodies && tbl.tBodies[0] ? tbl.tBodies[0].rows[0] : null;
+    if (!row1 || !wrapper) return;
+
+    // Reset wrapper first to avoid partial offset
+    wrapper.scrollTop = 0;
+
+    // Use CSS scroll-margin-top to account for any obstruction
+    // Perform a few frames in case layout shifts
+    let passes = 3;
+    const step = () => {
+      setObstructionVar();
+      row1.scrollIntoView({ behavior: 'instant', block: 'start' });
+      if (--passes > 0) {
+        if (window.requestAnimationFrame) requestAnimationFrame(step);
+        else setTimeout(step, 16);
+      }
+    };
+    if (window.requestAnimationFrame) requestAnimationFrame(step);
+    else step();
+  }
+
+  function onReady(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn, { once:true }); }
+
+  onReady(() => { setObstructionVar(); });
+
+  // Keep obstruction var up-to-date
+  window.addEventListener('resize', setObstructionVar);
+  window.addEventListener('orientationchange', setObstructionVar);
+  if (document.fonts && document.fonts.ready) { document.fonts.ready.then(setObstructionVar).catch(()=>{}); }
+
+  // React to content or theme changes
+  if ('MutationObserver' in window){
+    const mo = new MutationObserver(() => setTimeout(setObstructionVar, 0));
+    mo.observe(document.documentElement, { attributes:true, childList:true, subtree:true });
+  }
+  if ('ResizeObserver' in window){
+    const tbl = document.getElementById('tbl');
+    if (tbl){
+      const ro = new ResizeObserver(() => setObstructionVar());
+      ro.observe(tbl);
+    }
+    const wrapper = getWrapper();
+    if (wrapper){
+      const ro2 = new ResizeObserver(() => setObstructionVar());
+      ro2.observe(wrapper);
+    }
+  }
+
+  // Hook cycle changes and manual cycle advance
+  document.addEventListener('cycleChanged', scrollRow1IntoView);
+  const origAdvanceCycle = window.advanceCycle;
+  if (typeof origAdvanceCycle === 'function') {
+    window.advanceCycle = function(...args){
+      const res = origAdvanceCycle.apply(this, args);
+      scrollRow1IntoView();
+      return res;
+    };
+  }
+})();
+</script>
+<script id="theme-right-fallback-js">
+document.addEventListener('DOMContentLoaded', function(){
+    var link = byId('silenceSubLinkMid');
+    if(link){
+      link.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(); }, {passive:true});
+      // default: linked
+      link.checked = true;
+      setLinkedUI();
+    }
+  try{
+    var theme = document.getElementById('theme');
+    if(!theme) return;
+    var lbl = theme.closest('label');
+    if(!lbl) return;
+    // Make it the last item and push to the far right on wide screens
+    lbl.classList.add('theme-right');
+    lbl.style.order = '999';           // ensure it appears after other items
+    lbl.style.marginLeft = 'auto';     // push to the far right when space exists
+    // Keep label layout tidy
+    if(!lbl.style.display) lbl.style.display = 'inline-flex';
+    if(!lbl.style.alignItems) lbl.style.alignItems = 'center';
+  }catch(e){ /* no-op */ }
+});
+</script>
+<script id="blue-panel-fallback-js">
+(function(){
+  function tagCards(){
+    var cards = document.querySelectorAll('.card');
+    cards.forEach(function(card){
+      // clear any previous tags
+      card.classList.remove('has-tbl','no-tbl');
+      if(card.querySelector('#tbl')){
+        card.classList.add('has-tbl');
+      }else{
+        card.classList.add('no-tbl');
+      }
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', tagCards);
+  }else{
+    tagCards();
+  }
+  // If the app mutates the DOM, re-tag on resize as a simple heuristic
+  window.addEventListener('resize', function(){
+    clearTimeout(window.__tagCardsTimer);
+    window.__tagCardsTimer = setTimeout(tagCards, 200);
+  }, { passive: true });
+})();
+</script>
+<script id="silence-sub-js">
+(function(){
+  function byId(id){ return document.getElementById(id); }
+
+  function midpointBpm(){
+    const s = +((byId('start')&&byId('start').value)||0);
+    const t = +((byId('target')&&byId('target').value)||0);
+    if(!isFinite(s) || !isFinite(t)) return '';
+    return Math.round((s + t) / 2);
+  }
+
+  function updateSilenceInputDefault(){
+    var box = byId('silenceSubAbove');
+    if(!box) return;
+    var val = parseInt(box.value, 10);
+    if(!isFinite(val) || val <= 0){
+      var mid = midpointBpm();
+      if(mid){ box.value = String(mid); }
+
+  function isLinked(){ var l=byId('silenceSubLinkMid'); return !!(l && l.checked); }
+  function setLinkedUI(){
+    var box = byId('silenceSubAbove'), link = byId('silenceSubLinkMid');
+    if(!box) return;
+    if(link){ box.readOnly = !!link.checked; box.style.opacity = link.checked ? '0.8' : ''; }
+  }
+    }
+  }
+
+  function onToggleSilence(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    if(!toggle || !box) return;
+    box.disabled = !toggle.checked;
+    box.setAttribute('aria-disabled', box.disabled ? 'true':'false');
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    if(toggle && box){
+      toggle.checked = false;
+      onToggleSilence();
+      toggle.addEventListener('change', onToggleSilence, {passive:true});
+    }
+    var s = byId('start'), t = byId('target'), g = byId('gen');
+    if(s) s.addEventListener('change', updateSilenceInputDefault, {passive:true});
+    if(t) t.addEventListener('change', updateSilenceInputDefault, {passive:true});
+    if(g) g.addEventListener('click', function(){ 
+      setTimeout(function(){ setLinkedUI(); updateSilenceInputDefault(); }, 0); 
+    }, {passive:true});
+    setTimeout(updateSilenceInputDefault, 0);
+  });
+
+  window.__silenceSubShouldMute = function(bpm){
+    const toggle = byId('silenceSubToggle');
+    const box = byId('silenceSubAbove');
+    if(!toggle || !box) return false;
+    if(!toggle.checked) return false;
+    const thr = parseInt(box.value,10);
+    if(!isFinite(thr) || thr <= 0) return false;
+    return bpm >= thr;
+  };
+})();
+</script>
+<script id="silence-sub-persist-js">
+(function(){
+  function byId(id){ return document.getElementById(id); }
+  var LS_KEY = "icu_silence_sub_settings_v1";
+
+  function midpointBpm(){
+    const s = +((byId('start')&&byId('start').value)||0);
+    const t = +((byId('target')&&byId('target').value)||0);
+    if(!isFinite(s) || !isFinite(t)) return '';
+    return Math.round((s + t) / 2);
+  }
+
+  function isLinked(){ var l=byId('silenceSubLinkMid'); return !!(l && l.checked); }
+  function setLinkedUI(){
+    var box = byId('silenceSubAbove'), link = byId('silenceSubLinkMid');
+    if(!box) return;
+    if(link){ box.readOnly = !!link.checked; box.style.opacity = link.checked ? '0.8' : ''; }
+  }
+
+  function updateSilenceInputDefault(forceMidIfLinked){
+    var box = byId('silenceSubAbove');
+    if(!box) return;
+    var useMid = !!forceMidIfLinked || isLinked();
+    var val = parseInt(box.value, 10);
+    if(!isFinite(val) || val <= 0 || useMid){
+      var mid = midpointBpm();
+      if(mid){ box.value = String(mid); }
+    }
+  }
+
+  function onToggleSilence(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    if(!toggle || !box) return;
+    box.disabled = !toggle.checked;
+    box.setAttribute('aria-disabled', box.disabled ? 'true':'false');
+  }
+
+  function savePersist(){
+    try{
+      var data = {
+        on: !!(byId('silenceSubToggle') && byId('silenceSubToggle').checked),
+        bpm: (byId('silenceSubAbove') && byId('silenceSubAbove').value) || "",
+        link: !!(byId('silenceSubLinkMid') && byId('silenceSubLinkMid').checked)
+      };
+      localStorage.setItem(LS_KEY, JSON.stringify(data));
+    }catch(_){}
+  }
+
+  function loadPersist(){
+    try{
+      var raw = localStorage.getItem(LS_KEY);
+      if(!raw) return;
+      var data = JSON.parse(raw||"{}");
+      if(byId('silenceSubToggle')) byId('silenceSubToggle').checked = !!data.on;
+      if(byId('silenceSubLinkMid')) byId('silenceSubLinkMid').checked = (data.link !== false); // default true
+      if(byId('silenceSubAbove') && data.bpm) byId('silenceSubAbove').value = data.bpm;
+    }catch(_){}
+  }
+
+  function wireEvents(){
+    var toggle = byId('silenceSubToggle');
+    var box = byId('silenceSubAbove');
+    var link = byId('silenceSubLinkMid');
+    var s = byId('start'), t = byId('target'), g = byId('gen');
+
+    if(toggle){
+      toggle.addEventListener('change', function(){ onToggleSilence(); savePersist(); }, {passive:true});
+    }
+    if(box){
+      box.addEventListener('input', savePersist, {passive:true});
+      box.addEventListener('change', savePersist, {passive:true});
+    }
+    if(link){
+      link.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, {passive:true});
+    }
+    if(s){
+      s.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, {passive:true});
+      s.addEventListener('input', function(){ if(isLinked()) updateSilenceInputDefault(true); }, {passive:true});
+    }
+    if(t){
+      t.addEventListener('change', function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, {passive:true});
+      t.addEventListener('input', function(){ if(isLinked()) updateSilenceInputDefault(true); }, {passive:true});
+    }
+    if(g){
+      g.addEventListener('click', function(){
+        // After generate() runs, update to the new midpoint when linked
+        setTimeout(function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, 0);
+      }, {passive:true});
+    }
+  }
+
+  // Monkey-patch generate() to refresh threshold post-regeneration as a fallback
+  // (in case Generate is triggered programmatically elsewhere)
+  try{
+    if(window.generate && !window.__patchedSilenceSubGenerate){
+      var _origGen = window.generate;
+      window.generate = function(){
+        var r = _origGen.apply(this, arguments);
+        try{
+          setTimeout(function(){ setLinkedUI(); updateSilenceInputDefault(true); savePersist(); }, 0);
+        }catch(_){}
+        return r;
+      };
+      window.__patchedSilenceSubGenerate = true;
+    }
+  }catch(_){}
+
+  document.addEventListener('DOMContentLoaded', function(){
+    loadPersist();              // restore saved state
+    onToggleSilence();          // enforce disabled state on load
+    setLinkedUI();              // reflect link state
+    updateSilenceInputDefault(true); // set to midpoint if linked or empty
+    wireEvents();               // attach listeners
+    savePersist();              // persist any defaults
+  });
+})();
+</script>
+<!-- ICU: persist cycle after each render -->
+<script>
+(function(){
+  function wrapRender(){
+    const fn = window.renderCycle;
+    if (typeof fn !== 'function' || fn.__icuIcuWrapped) return;
+    const w = function(...args){
+      const out = fn.apply(this, args);
+      try{
+        if (typeof window.currentCycle === 'number' && window.currentCycle >= 1 && typeof window.__icuPersistCycle === 'function'){
+          window.__icuPersistCycle(window.currentCycle);
+        }
+      }catch(_){}
+      return out;
+    };
+    w.__icuIcuWrapped = true;
+    window.renderCycle = w;
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive'){
+    wrapRender();
+  } else {
+    window.addEventListener('DOMContentLoaded', wrapRender, {once:true});
+  }
+  window.addEventListener('pageshow', function(){
+    // Re-run restore on iOS bfcache
+    try{ if (typeof restoreResumeOnLoad === 'function') restoreResumeOnLoad(); }catch(_){}
+    wrapRender();
+  });
+  window.addEventListener('pagehide', function(){
+    try{ if (typeof window.__icuPersistCycle === 'function') window.__icuPersistCycle(window.currentCycle); }catch(_){}
+  });
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden'){
+      try{ if (typeof window.__icuPersistCycle === 'function') window.__icuPersistCycle(window.currentCycle); }catch(_){}
+    }
+  });
+})();
+</script>
+<!-- StartSeg dynamic constraints -->
+<script>
+(function(){
+  function updateStartSegConstraints() {
+    const seg = byId('startSeg');
+    const cyc = +byId('cycles')?.value || 0;
+    if (!seg) return;
+
+    if (cyc <= 2) {
+      seg.value = '';
+      seg.disabled = true;
+      seg.title = 'Not applicable when Cycles \u2264 2';
+      seg.removeAttribute('min');
+      seg.removeAttribute('max');
+      seg.setCustomValidity('');
+    } else {
+      seg.disabled = false;
+      seg.title = `Choose 2 \u2026 ${cyc - 1}`;
+      seg.min = 2;
+      seg.max = cyc - 1;
+
+      const v = +seg.value;
+      if (v && (v < 2 || v > cyc - 1)) {
+        seg.value = '';
+        seg.setCustomValidity('');
+      }
+    }
+  }
+
+  function attachHandlers(){
+    const cycEl = byId('cycles');
+    const segEl = byId('startSeg');
+    if (cycEl) {
+      cycEl.addEventListener('input', updateStartSegConstraints);
+      cycEl.addEventListener('change', updateStartSegConstraints);
+    }
+    if (segEl) {
+      segEl.addEventListener('input', ()=>{
+        const seg = segEl;
+        const cyc = +byId('cycles')?.value || 0;
+        const v = +seg.value;
+        if (!v) { seg.setCustomValidity(''); return; }
+        if (cyc > 2 && (v < 2 || v > cyc - 1)) {
+          seg.setCustomValidity(`Choose a number between 2 and ${cyc - 1}.`);
+          seg.reportValidity();
+        } else {
+          seg.setCustomValidity('');
+        }
+      });
+    }
+    updateStartSegConstraints();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachHandlers);
+  } else {
+    attachHandlers();
+  }
+})();
+</script>
+<!-- iOS/Safari audio unlock & resume guards -->
+<script>
+(function(){
+  let __audioUnlocked = false;
+  function _playSilentTick(ctx){
+    try{
+      const b = ctx.createBuffer(1, 1, 22050);
+      const s = ctx.createBufferSource();
+      s.buffer = b;
+      s.connect(ctx.destination);
+      try { s.start(0); } catch(_) {}
+      setTimeout(()=>{ try{ s.disconnect(); }catch(_){}} , 0);
+    }catch(_){}
+  }
+  function _resumeIfNeeded(){
+    if (!window.audioCtx) return;
+    if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+      audioCtx.resume().catch(()=>{});
+    }
+  }
+  window.installAudioGuards = function(){
+    if (window.__audioGuardsInstalled) return;
+    window.__audioGuardsInstalled = true;
+    const unlock = ()=>{
+      if (!window.audioCtx) return;
+      if (!__audioUnlocked) { _playSilentTick(audioCtx); __audioUnlocked = true; }
+      _resumeIfNeeded();
+    };
+    ['pointerdown','touchend','keydown','mousedown'].forEach(ev => {
+      document.addEventListener(ev, unlock, {passive:true});
+    });
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) _resumeIfNeeded(); });
+    window.addEventListener('pageshow', _resumeIfNeeded);
+  };
+})();
+</script>
+<!-- Enhanced iOS(WebKit) audio lifecycle handling -->
+<script>
+(function(){
+  const isIOSWebKit = /AppleWebKit/.test(navigator.userAgent) && /(iPad|iPhone|iPod)/.test(navigator.userAgent);
+  let resuming = false;
+
+  function ensureCtx(){
+    try{
+      if (!window.audioCtx || window.audioCtx.state === 'closed') {
+        window.audioCtx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+      }
+      return window.audioCtx;
+    }catch(e){ return null; }
+  }
+
+  async function resumeCtx(){
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    if (resuming) return;
+    resuming = true;
+    try {
+      if (ctx.state !== 'running') {
+        await ctx.resume().catch(()=>{});
+        // extra tick satisfies gesture on some builds
+        const b = ctx.createBuffer(1,1,22050), s = ctx.createBufferSource();
+        s.buffer = b; s.connect(ctx.destination);
+        try { s.start(0); } catch(_) {}
+        setTimeout(()=>{ try{s.disconnect();}catch(_){ } }, 0);
+      }
+    } finally {
+      resuming = false;
+    }
+  }
+
+  function installLifecycle(){
+    if (window.__enhancedAudioLifecycle) return;
+    window.__enhancedAudioLifecycle = true;
+
+    const wake = ()=>resumeCtx();
+    ['pointerdown','touchend','keydown','mousedown'].forEach(ev=>document.addEventListener(ev, wake, {passive:true}));
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) resumeCtx(); });
+    window.addEventListener('pageshow', (e)=>{ if (e.persisted) resumeCtx(); else resumeCtx(); });
+    window.addEventListener('pagehide', ()=>{/* webkit bfcache */});
+    document.addEventListener('freeze', ()=>{/* hint */});
+    // monitor state changes (some WebKit builds flip to 'interrupted')
+    const ctx = ensureCtx();
+    if (ctx) {
+      ctx.onstatechange = ()=>{
+        if (ctx.state === 'suspended' || ctx.state === 'interrupted') resumeCtx();
+      };
+    }
+  }
+
+  // Hook Start button explicitly for guaranteed gesture path
+  function hookStart(){
+    const btn = document.getElementById('start');
+    if (!btn) return;
+    if (btn.__audioHooked) return;
+    btn.__audioHooked = true;
+    btn.addEventListener('click', ()=>resumeCtx(), {capture:true});
+    btn.addEventListener('touchend', ()=>resumeCtx(), {capture:true, passive:true});
+  }
+
+  function init(){
+    installLifecycle();
+    hookStart();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+<script>
+(function(){
+  const oldCompress = window.compressSegments;
+  window.compressSegments = function(segStr){
+    try{
+      if(!segStr || typeof segStr !== 'string') return segStr;
+      const parts = segStr.split(',')
+        .map(s => parseInt(s.trim(),10))
+        .filter(n => !isNaN(n));
+      if(parts.length === 0) return segStr;
+
+      parts.sort((a,b)=>a-b);
+
+      const out = [];
+      let runStart = parts[0];
+      let prev = parts[0];
+
+      for(let i=1; i<=parts.length; i++){
+        const v = parts[i];
+        if(i < parts.length && v === prev + 1){
+          prev = v;
+          continue;
+        }
+        if(prev > runStart){
+          out.push(runStart + '-' + prev);
+        } else {
+          out.push(String(runStart));
+        }
+        if(i < parts.length){
+          runStart = prev = v;
+        }
+      }
+      return out.join(', ');
+    }catch(_){
+      return segStr;
+    }
+  };
+})();
+</script>
+<!-- Full Volume toggle: iPad/WebKit-safe absolute restore + de-dupe with platform boosts -->
+<script>
+(function () {
+  const onReady = (fn) => (document.readyState === "loading"
+    ? document.addEventListener("DOMContentLoaded", fn, { once: true })
+    : fn());
+
+  onReady(() => {
+    const cb = document.querySelector("#allowFullVolume");
+    if (!cb) return;
+
+    const audioCtx = window.audioCtx || window.ctx || window.audioContext || null;
+    const masterGain = window.masterGain || window.mainGain || window.masterGainNode || null;
+    if (!audioCtx || !masterGain || !masterGain.gain) return;
+
+    if (typeof window.__baselineGain === "undefined" || window.__baselineGain === null) {
+      const capture = () => {
+        if (audioCtx.state === "running") {
+          if (typeof window.__baselineGain === "undefined" || window.__baselineGain === null) {
+            window.__baselineGain = masterGain.gain.value;
+          }
+          audioCtx.removeEventListener?.("statechange", capture);
+        }
+      };
+      capture();
+      audioCtx.addEventListener?.("statechange", capture);
+    }
+
+    if (!window.__lastFullVolState) window.__lastFullVolState = cb.checked;
+
+    // Detect iPad/iOS platform
+    const ua = navigator.userAgent || "";
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || 
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    // Target multipliers
+    const FULL_VOL_TARGET = isIOS ? 1.8 : 1.2;
+
+    function setAllowFullVolume(enabled) {
+      if (enabled === window.__lastFullVolState) return;
+      window.__lastFullVolState = enabled;
+
+      const t = audioCtx.currentTime || 0;
+      const baseline = (typeof window.__baselineGain === "number" && window.__baselineGain > 0)
+        ? window.__baselineGain
+        : masterGain.gain.value || 0.8;
+
+      try {
+        masterGain.gain.cancelScheduledValues(t);
+        if (enabled) {
+          masterGain.gain.setValueAtTime(baseline, t);
+          masterGain.gain.linearRampToValueAtTime(FULL_VOL_TARGET, t + 0.005);
+        } else {
+          masterGain.gain.setValueAtTime(FULL_VOL_TARGET, t);
+          masterGain.gain.linearRampToValueAtTime(baseline, t + 0.005);
+        }
+      } catch (e) {
+        masterGain.gain.value = enabled ? FULL_VOL_TARGET : baseline;
+      }
+    }
+
+    window.__lastFullVolState = cb.checked;
+
+    const onPointer = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setAllowFullVolume(cb.checked);
+    };
+    const onClickBlock = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+
+    cb.replaceWith(cb.cloneNode(true));
+    const fresh = document.querySelector("#allowFullVolume");
+    fresh.addEventListener("pointerup", onPointer, { passive: false });
+    fresh.addEventListener("click", onClickBlock, { passive: false });
+
+    window.__setAllowFullVolume = setAllowFullVolume;
+  });
+})();
+</script>
+<script>
+// FROM_TOWARDS_EXCLUSIVE
+(function(){
+  var t=document.getElementById('towardsCenter');
+  var f=document.getElementById('fromCenter');
+  if(!t || !f) return;
+  var syncing=false;
+  t.addEventListener('change', function(){ if(syncing) return; syncing=true; if(t.checked) f.checked=false; syncing=false; });
+  f.addEventListener('change', function(){ if(syncing) return; syncing=true; if(f.checked) t.checked=false; syncing=false; });
+})();</script>
+<script>
+// === Enforce: Generate always resets to Cycle 1, Step 1 (Start Tempo) ===
+(function(){
+  function safe(fn){ try{ return fn(); }catch(_){ } }
+  function ready(fn){ if(document.readyState==='complete') fn(); else window.addEventListener('load', fn); }
+  ready(function(){
+    const _origGen = window.generate;
+    if (typeof _origGen !== 'function') return;
+    window.generate = function(){
+      const ret = _origGen.apply(this, arguments);
+      // After generation completes and the table re-renders, force Cycle 1 / Step 1
+      setTimeout(function(){
+        try{ window.currentCycle = 1; }catch(_){}
+        safe(()=>window.renderCycle && window.renderCycle());
+        safe(()=>window.setCurrentIndexInCycle && window.setCurrentIndexInCycle(0));
+        safe(()=>window.scrollCycleHeaderIntoView && window.scrollCycleHeaderIntoView());
+        safe(()=>window.saveResumeState && window.saveResumeState());
+        if (window.isStarted){
+          try{ if(window.beatTimer) clearInterval(window.beatTimer); }catch(_){}
+          window.beatTimer = null;
+          safe(()=>window.playCurrent && window.playCurrent());
+        }
+      }, 0);
+      return ret;
+    };
+  });
+})();
+</script>
+
+
+<script>
+// === Auto-regenerate cycles when Build FROM Center toggled ===
+(function(){
+  function byId(id){ return document.getElementById(id); }
+  function safe(fn){ try{ return fn(); }catch(_){ } }
+  function ready(fn){ if(document.readyState==='complete') fn(); else window.addEventListener('load', fn); }
+  ready(function(){
+    const cb = byId('fromCenter');
+    if(cb){
+      cb.addEventListener('change', function(){
+        safe(()=>window.generate && window.generate());
+      });
+    }
+  });
+})();
+</script>
+
+
+<!-- ICU iPad/WebAudio Resilience Patch v2: minimal, self-contained -->
+<style>
+#icu-audio-repair-btn{
+  position:fixed; right:12px; bottom:12px; z-index:99999;
+  font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  padding:10px 12px; border-radius:12px; border:none; box-shadow:0 4px 10px rgba(0,0,0,.25);
+  background:#ffd54d; color:#000; display:none; cursor:pointer;
+}
+#icu-audio-repair-btn:active{ transform: translateY(1px); }
+</style>
+<button id="icu-audio-repair-btn" type="button" aria-live="polite" aria-label="Repair sound">🔊 Tap to restore sound</button>
+<script>
+(() => {
+  // Guard against double-install
+  if (window.__icuAudioPatchInstalled__) return;
+  window.__icuAudioPatchInstalled__ = true;
+
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx = null;
+  let audioUnlocked = false;
+  let lastProbe = 0;
+  let probeTimer = null;
+  let userInteractedOnce = false;
+  let allowRepairUI = false;
+
+  function getAudioCtx(){
+    if (!audioCtx || audioCtx.state === 'closed'){
+      try {
+        audioCtx = new Ctx({latencyHint:'interactive'});
+        audioCtx.onstatechange = () => {
+          console.log('[ICU Audio] state:', audioCtx.state);
+          updateRepairUI();
+        };
+      } catch(e){ console.warn('[ICU Audio] cannot create context', e); }
+    }
+    return audioCtx;
+  }
+
+  async function unlockAudio(reason=''){
+    const ctx = getAudioCtx();
+    try { await ctx.resume(); } catch(e){}
+    // Play a very short silent probe to bind output route
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 128, ctx.sampleRate);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.00001, ctx.currentTime);
+      src.connect(gain).connect(ctx.destination);
+      src.start();
+      src.stop(ctx.currentTime + 0.005);
+    } catch(e){}
+    audioUnlocked = (ctx.state === 'running');
+    updateRepairUI();
+    window.dispatchEvent(new CustomEvent('icu-audio-unlock', { detail: { reason } }));
+  }
+
+  function updateRepairUI(){
+    const btn = document.getElementById('icu-audio-repair-btn');
+    const ctx = getAudioCtx();
+    // Show button only after a clear signal that audio is needed (user gesture or page return)
+    if (allowRepairUI && (!ctx || ctx.state !== 'running')){
+      btn.style.display = 'inline-block';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  // Public helpers other code can call if needed
+  window.ICU_AUDIO = {
+    getAudioCtx, unlockAudio,
+    ensureRunning: () => unlockAudio('[ensureRunning]')
+  };
+
+  // UI button to fix sound on demand
+  const repairBtn = document.getElementById('icu-audio-repair-btn');
+  repairBtn.addEventListener('click', () => unlockAudio('[repair button]'), {passive:true});
+
+  // Unlock on first user gesture (covers iOS)
+  ['pointerdown','touchstart','touchend','mousedown','keydown'].forEach(evt => {
+    window.addEventListener(evt, () => { userInteractedOnce = true; allowRepairUI = true; unlockAudio('[user gesture]'); }, { once: true, passive: true });
+  });
+
+  // Try to resume after visibility/tab return
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      allowRepairUI = true; // coming back to foreground implies audio may be needed
+      unlockAudio('[visibilitychange->visible]');
+    }
+  });
+
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      // Came back from bfcache; rebuild cleanly
+      if (audioCtx && audioCtx.state !== 'closed'){
+        try { audioCtx.close(); } catch(e){}
+      }
+      audioCtx = null;
+      allowRepairUI = true; // returning from bfcache
+    }
+    unlockAudio('[pageshow]');
+  });
+
+  // Watchdog probe: if scheduler thinks it is running but iOS has suspended audio,
+  // resume gently. We can't observe speaker output, so we check context state.
+  function startProbe(){
+    if (probeTimer) return;
+    probeTimer = setInterval(() => {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      // If suspended for > 1s while page visible, try to resume
+      if (document.visibilityState === 'visible' && ctx.state !== 'running'){
+        unlockAudio('[watchdog]');
+      }
+      // Also re-check UI
+      updateRepairUI();
+    }, 1200);
+  }
+  startProbe();
+
+  // Initial paint
+  getAudioCtx();
+  updateRepairUI();
+})();
+</script>
+
+
+
+<script>
+(function(){
+  function toKeycap(text){
+    const k = document.createElement('kbd');
+    k.textContent = text.trim();
+    return k;
+  }
+  function insertSep(cls, sym){
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = sym;
+    return s;
+  }
+  function upgrade(container){
+    if (!container) return;
+    // 1) Convert any <code> to <kbd>
+    container.querySelectorAll('code').forEach(code => {
+      const k = toKeycap(code.textContent);
+      code.replaceWith(k);
+    });
+    // 2) Split composite keys inside <kbd> (e.g., "Shift&nbsp;+&nbsp;←") into multiple <kbd> with separators
+    container.querySelectorAll('kbd').forEach(k => {
+      const txt = k.textContent;
+      if (!/[+]/.test(txt)) return; // only split if "+" present
+      const parent = k.parentNode;
+      if (!parent) return;
+      const parts = txt.split('+').map(s => s.trim()).filter(Boolean);
+      const frag = document.createDocumentFragment();
+      parts.forEach((p, i) => {
+        frag.appendChild(toKeycap(p));
+        if (i < parts.length - 1) frag.appendChild(insertSep('plus', '+'));
+      });
+      parent.replaceChild(frag, k);
+    });
+    // 3) Replace plain text slashes between tokens with spaced separators
+    container.querySelectorAll('li').forEach(li => {
+      // Walk text nodes only; leave existing elements alone
+      const nodes = Array.from(li.childNodes);
+      nodes.forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE && node.nodeValue.includes('/')){
+          const parts = node.nodeValue.split('/');
+          const frag = document.createDocumentFragment();
+          parts.forEach((p, idx) => {
+            if (p) frag.appendChild(document.createTextNode(p));
+            if (idx < parts.length - 1) frag.appendChild(insertSep('slash', '/'));
+          });
+          li.replaceChild(frag, node);
+        }
+      });
+    });
+  }
+  function init(){
+    upgrade(document.querySelector('.keyLegend'));
+    upgrade(document.getElementById('legendMobile'));
+    upgrade(document.getElementById('legendMobileStatic'));
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+
+
+<style>
+/* Inline "Last updated" next to the title */
+.updateInline{
+  font: 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  margin-left: 12px;
+  white-space: nowrap;
+  color: var(--muted, #888);
+}
+.updateInline a{ color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 540px){
+  .updateInline{ display:block; margin:6px 0 0 0; white-space:normal; }
+}
+</style>
+<script>
+(function(){
+  // Create the inline banner next to the first <h1> we can find
+  function insertInline(){
+    const h1 = document.querySelector('h1');
+    if(!h1) return;
+    // Avoid duplicates
+    if (h1.querySelector('.updateInline')) return;
+    const span = document.createElement('span');
+    span.className = 'updateInline';
+    span.innerHTML = 'Last updated: <span id="lastUpdatedInlineDate">loading…</span> — <a rel="noopener noreferrer" target="_blank" href="https://nellsonic.github.io/icu-metronome/features.html">See Features Guide</a> for details';
+    h1.appendChild(span);
+  }
+
+  async function fetchCommitDate(repo, path){
+    const url = `https://api.github.com/repos/${repo}/commits?path=${encodeURIComponent(path)}&sha=main&per_page=1`;
+    const r = await fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (Array.isArray(data) && data.length && data[0].commit && data[0].commit.committer){
+      return new Date(data[0].commit.committer.date);
+    }
+    throw new Error('No commit data');
+  }
+
+  function fmt(d){
+    try{
+      return d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) +
+             ' ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+    }catch(_){
+      return d.toISOString();
+    }
+  }
+
+  async function init(){
+    insertInline();
+    const el = document.getElementById('lastUpdatedInlineDate');
+    if(!el) return;
+    try{
+      const d = await fetchCommitDate('nellsonic/icu-metronome', 'docs/index.html');
+      el.textContent = fmt(d);
+    }catch(e){
+      try{
+        const d2 = new Date(document.lastModified);
+        if (isFinite(d2)) { el.textContent = fmt(d2) + ' (local)'; return; }
+      }catch(_){}
+      el.textContent = 'unavailable';
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+</body>
+</html>
