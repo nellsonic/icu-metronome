@@ -2004,6 +2004,26 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
   gap: 4px;
 }
 </style>
+<style>
+/* --- Robust, no-wrap layout for keyboard shortcuts legend --- */
+.legend-list { 
+  list-style: none; margin: 8px 0 0 0; padding: 0; display: grid; gap: 6px;
+}
+.legend-list li { 
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
+}
+.legend-list .keys, .legend-list .label, .legend-list code { 
+  white-space: nowrap; 
+}
+.legend-list .eq { 
+  flex: 0 0 auto; opacity: .8;
+}
+@media (max-width: 700px){
+  /* If a mobile legend exists, ensure same treatment */
+  #legendMobile .legend-list li { display:flex; align-items:center; gap:10px; flex-wrap:nowrap; }
+  #legendMobile .legend-list .keys, #legendMobile .legend-list .label, #legendMobile code { white-space:nowrap; }
+}
+</style>
 </head>
 <body>
 <h1>Interleaved Clicking Up Metronome</h1>
@@ -2054,10 +2074,14 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <button class="btn ghost" id="save">Save Defaults</button>
 <button class="btn ghost" id="reset">Reset Defaults</button>
 <button aria-pressed="false" class="btn acc" id="startStopBtn">Start</button>
-</div><div class="keyLegend"><div><u>Keyboard shortcuts</u></div>
-  <ul style="list-style:none;margin:8px 0 0 0;padding:0;line-height:1.45;"><li><code>Space</code>&emsp;=&emsp;Start / Stop</li>
-    <li><code>↑</code>&emsp;/&emsp;<code>↓</code>&emsp;=&emsp;Prev&nbsp;/&nbsp;Next&nbsp;Step</li>
-    <li><code>Shift&nbsp;+&nbsp;←</code>&emsp;/&emsp;<code>Shift&nbsp;+&nbsp;→</code>&emsp;=&emsp;Prev&nbsp;/&nbsp;Next&nbsp;Cycle</li></ul></div></div>
+</div><div class="keyLegend">
+  <div><u>Keyboard shortcuts</u></div>
+  <ul class="legend-list">
+    <li><span class="keys"><code>Space</code></span><span class="eq">=</span><span class="label">Start / Stop</span></li>
+    <li><span class="keys"><code>↑</code>&nbsp;/&nbsp;<code>↓</code></span><span class="eq">=</span><span class="label">Prev / Next Step</span></li>
+    <li><span class="keys"><code>Shift&nbsp;+&nbsp;←</code>&nbsp;/&nbsp;<code>Shift&nbsp;+&nbsp;→</code></span><span class="eq">=</span><span class="label">Prev / Next Cycle</span></li>
+  </ul>
+</div>
 <div class="opts-inline" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><div class="silence-row"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-grid; grid-template-columns:auto 1fr; align-items:center; gap:6px;">
 <input aria-controls="silenceSubAbove" aria-label="Enable silencing subdivisions above BPM" id="silenceSubToggle" type="checkbox"/>
 <span>Silence subdivisions above</span>
