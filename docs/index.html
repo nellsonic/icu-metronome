@@ -2043,11 +2043,9 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <button class="btn ghost" id="reset">Reset Defaults</button>
 <button aria-pressed="false" class="btn acc" id="startStopBtn">Start</button>
 </div><div class="keyLegend"><div><u>Keyboard shortcuts</u></div>
-  <ul style="list-style:none;margin:8px 0 0 0;padding:0;line-height:1.45;">
-    <li><code>Space</code>&emsp;=&emsp;Start / Stop</li>
-    <li><code>Shift + ←</code>&emsp;/&emsp;<code>Shift + →</code>&emsp;=&emsp;Prev / Next Cycle</li>
-    <li><code>↑</code>&emsp;/&emsp;<code>↓</code>&emsp;=&emsp;Prev / Next Step</li>
-  </ul></div></div>
+  <ul style="list-style:none;margin:8px 0 0 0;padding:0;line-height:1.45;"><li><code>Space</code>&emsp;=&emsp;Start / Stop</li>
+    <li><code>↑</code>&emsp;/&emsp;<code>↓</code>&emsp;=&emsp;Prev&nbsp;/&nbsp;Next&nbsp;Step</li>
+    <li><code>Shift&nbsp;+&nbsp;←</code>&emsp;/&emsp;<code>Shift&nbsp;+&nbsp;→</code>&emsp;=&emsp;Prev&nbsp;/&nbsp;Next&nbsp;Cycle</li></ul></div></div>
 <div class="opts-inline" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><div class="silence-row"><label style="margin:0; font-size:12.5px; color:var(--text); display:inline-grid; grid-template-columns:auto 1fr; align-items:center; gap:6px;">
 <input aria-controls="silenceSubAbove" aria-label="Enable silencing subdivisions above BPM" id="silenceSubToggle" type="checkbox"/>
 <span>Silence subdivisions above</span>
@@ -2095,8 +2093,8 @@ label:has(#allowFullVolume) .volwarn{ grid-column: 2; justify-self: start; text-
 <div class="legendMobile" id="legendMobileStatic"><div><u>Keyboard shortcuts</u></div>
 <ul style="list-style:none; margin:8px 0 0 0; padding:0;">
 <li style="margin:4px 0;; list-style:none"><code>Space</code> = Start / Stop</li>
-<li style="margin:4px 0;; list-style:none"><code>Shift</code> + <code>←</code> / <code>Shift</code> + <code>→</code> = Prev / Next Cycle</li>
-<li style="margin:4px 0;; list-style:none"><code>↑</code> / <code>↓</code> = Prev / Next Step</li>
+<li style="margin:4px 0;; list-style:none"><code>Shift</code> + <code>←</code> / <code>Shift</code> + <code>→</code> = Prev&nbsp;/&nbsp;Next&nbsp;Cycle</li>
+<li style="margin:4px 0;; list-style:none"><code>↑</code> / <code>↓</code> = Prev&nbsp;/&nbsp;Next&nbsp;Step</li>
 </ul></div>
 <div class="linksFoot" id="resourcesLinks"><span>Resource Links:</span>
 <span class="rl-chunk"><a href="https://nellsonic.github.io/icu-metronome/features.html" id="linkFeaturesGuide" rel="noopener" target="_blank">Features Guide</a> <span class="sep"><span aria-hidden="true" class="sep"> • </span></span></span> <span class="rl-chunk"><a href="https://www.youtube.com/watch?v=e08zFDnLOYY" id="linkWhyInterleaving" rel="noopener" target="_blank">Demonstration of the Process</a> <span class="sep"><span aria-hidden="true" class="sep"> • </span></span></span> <span class="rl-chunk"><a href="https://www.mollygebrian.com/" id="linkMollyGebrian" rel="noopener" target="_blank">Dr. Molly Gebrian</a> <span class="sep"><span aria-hidden="true" class="sep"> • </span></span></span> <span class="rl-chunk"><a aria-controls="feedbackMenu" aria-expanded="false" href="#" id="linkFeedback">Send feedback ▾</a></span><div class="fb-pop" hidden="" id="feedbackMenu" role="menu">
@@ -4171,7 +4169,7 @@ document.addEventListener('DOMContentLoaded', function(){
       const k = toKeycap(code.textContent);
       code.replaceWith(k);
     });
-    // 2) Split composite keys inside <kbd> (e.g., "Shift + ←") into multiple <kbd> with separators
+    // 2) Split composite keys inside <kbd> (e.g., "Shift&nbsp;+&nbsp;←") into multiple <kbd> with separators
     container.querySelectorAll('kbd').forEach(k => {
       const txt = k.textContent;
       if (!/[+]/.test(txt)) return; // only split if "+" present
